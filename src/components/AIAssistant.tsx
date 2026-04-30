@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Cpu, Sparkles, User, Terminal, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { getChatResponse } from '../services/geminiService';
+import { useSchemaStore } from '../store/schemaStore';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -13,23 +15,36 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const tables = useSchemaStore(state => state.tables);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
+  useEffect(() => {
+    if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isTyping]);
+
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return;
     
-    const newMessages = [...messages, { role: 'user', content: input } as Message];
+    const userMessage: Message = { role: 'user', content: input };
+    const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
     setIsTyping(true);
 
-    // Simulated AI response for demo
-    setTimeout(() => {
-      setMessages([...newMessages, { 
-        role: 'assistant', 
-        content: "I've analyzed your current data schema. You can join the 'Contacts' and 'Companies' tables using the 'company_id' field to display the organization name in your list view." 
-      }]);
-      setIsTyping(false);
-    }, 1500);
+    try {
+        const schemaContext = JSON.stringify(tables, null, 2);
+        const aiResponse = await getChatResponse(newMessages, schemaContext);
+        setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }]);
+    } catch (error) {
+        setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: "I'm sorry, I encountered an error connecting to the AI brain. Please check your API configuration." 
+        }]);
+    } finally {
+        setIsTyping(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -59,7 +74,7 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
         {messages.map((msg, i) => (
           <div key={i} className={cn(
             "flex gap-3",

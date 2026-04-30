@@ -40,6 +40,14 @@ export interface Field {
   relationTarget?: string; // Table ID
 }
 
+export interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  avatar?: string;
+}
+
 export interface Table {
   id: string;
   name: string;
@@ -71,6 +79,13 @@ export interface ScreenConfig {
 export interface ComponentConfig {
   id: string;
   type: string;
+  label: string;
   properties: Record<string, any>;
   dataBinding?: string; // Field reference
+  position?: { x: number; y: number };
+}
+
+export interface CanvasState {
+  components: ComponentConfig[];
+  selectedId: string | null;
 }

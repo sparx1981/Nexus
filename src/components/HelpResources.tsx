@@ -18,10 +18,19 @@ const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: '2026-04-30',
     changes: [
-      'Initial platform scaffold: Established Nexus Studio shell with navigation and NDL design system.',
-      'Data Studio Foundation: Integrated Zustand for schema state and React Flow for visual modeling.',
-      'Help & Resources: Implemented documentation and centralized release tracking system.',
-      'Architecture: Defined core TypeScript interfaces for tables, apps, and components.'
+      'Interactive Sales/Operations Dashboards: Real-time Recharts monitoring with multi-dashboard filtering.',
+      'Data Studio Module: Full Entity-Relationship modeling, Table management, and Query Builder.',
+      'Trimble Connect Integration: Seamless syncing of BCF topics, project navigation, and data mapping.',
+      'Visual Workflow Designer: Drag-and-drop workspace using React Flow for orchestrating business logic.',
+      'Reports Engine: Structured tabular reports with advanced filtering, sorting, and CSV export capabilities.',
+      'AI Developer Assistant: Context-aware Gemini 1.5 Assistant that understands schema metadata.'
+    ]
+  },
+  {
+    date: '2026-04-15',
+    changes: [
+      'Core Platform Shell: Established navigation, auth state modeling, and NDL design system.',
+      'App Builder Prototype: Established initial drag-and-drop component palette.'
     ]
   }
 ];
@@ -31,13 +40,31 @@ const USER_DOCS: UserDoc[] = [
     id: 'intro',
     category: 'Getting Started',
     title: 'Introduction to Nexus',
-    content: 'Nexus is a cloud-native low-code platform. Use the sidebar to navigate between Applications, Data Studio, and Workflows.'
+    content: 'Nexus is a cloud-native low-code platform. Use the sidebar to navigate between Applications, Data Studio, and Workflows. The platform is built on an AI-first architecture to help you move from idea to production in minutes.'
   },
   {
     id: 'data-studio',
     category: 'Data Layer',
     title: 'Building your Schema',
-    content: 'In the Data Studio, you can create tables and define relationships. Drag nodes to organize your data universe.'
+    content: 'In the Data Studio, you can create tables and define relationships. Drag nodes to organize your data universe. You can also connect external sources like Snowflake or BigQuery to your Nexus tables.'
+  },
+  {
+    id: 'workflows',
+    category: 'Automation',
+    title: 'Workflow Orchestration',
+    content: 'Use the Workflow Designer to build logic. Triggers respond to data changes (e.g., Record Created), Actions execute tasks (e.g., Send Email), and Logic nodes handle conditional branching.'
+  },
+  {
+    id: 'dashboards',
+    category: 'Analytics',
+    title: 'Custom Dashboards',
+    content: 'Dashboards provide real-time visibility into your data. You can switch between Sales and Operations contexts and filter data by date range or specific KPIs.'
+  },
+  {
+    id: 'trimble',
+    category: 'Integrations',
+    title: 'Trimble Connect Sync',
+    content: 'Connect to your Trimble Connect AEC projects. You can browse files, manage BCF topics, and map project metadata directly to your Nexus applications for site-to-office automation.'
   }
 ];
 

@@ -28,3 +28,38 @@ export async function generateAppScaffold(prompt: string, schemaContext: string)
         throw error;
     }
 }
+
+export async function getChatResponse(messages: { role: 'user' | 'assistant', content: string }[], schemaContext: string) {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const history = messages.slice(0, -1).map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+    }));
+
+    const chat = model.startChat({
+        history: history,
+        generationConfig: {
+            maxOutputTokens: 1000,
+        },
+    });
+
+    const systemContext = `
+        You are the Nexus Developer Assistant. You help users build cloud-native low-code apps.
+        You have access to the current data schema:
+        ${schemaContext}
+        
+        Your tone is professional, technical, and helpful. 
+        When users ask about building features, refer to their actual table and field names.
+        Keep responses concise and actionable. Use markdown for tables or code snippets if needed.
+    `;
+
+    const lastMessage = messages[messages.length - 1].content;
+    const result = await chat.sendMessage([
+        { text: systemContext },
+        { text: lastMessage }
+    ]);
+    
+    const response = await result.response;
+    return response.text();
+}
