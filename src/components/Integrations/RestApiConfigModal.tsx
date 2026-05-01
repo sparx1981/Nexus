@@ -47,12 +47,43 @@ export function RestApiConfigModal({ onBack, onConnect, editingConnector }: Rest
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<any>(null);
 
-    const handleTest = () => {
+    const handleTest = async () => {
+        if (!config.baseUrl) {
+            setTestResult({ status: 'ERROR', data: { error: 'Please enter an endpoint URL first.' } });
+            return;
+        }
         setTesting(true);
-        setTimeout(() => {
-            setTestResult({ status: 200, data: { success: true, message: 'API connection established' } });
+        setTestResult(null);
+        try {
+            const url = new URL(config.baseUrl);
+            (config.params || []).forEach(p => {
+                if (p.key) url.searchParams.set(p.key, p.value);
+            });
+            const headers: Record<string, string> = {};
+            config.headers.forEach(h => {
+                if (h.key) headers[h.key] = h.value;
+            });
+            const fetchOptions: RequestInit = { method: config.method, headers };
+            const response = await fetch(url.toString(), fetchOptions);
+            const status = response.status;
+            let data: any;
+            const contentType = response.headers.get('content-type') || '';
+            try {
+                if (contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    const text = await response.text();
+                    try { data = JSON.parse(text); } catch { data = text; }
+                }
+            } catch {
+                data = `(no response body)`;
+            }
+            setTestResult({ status, data });
+        } catch (err: any) {
+            setTestResult({ status: 'ERROR', data: { error: err.message || 'Failed to reach endpoint. Check the URL and CORS policy.' } });
+        } finally {
             setTesting(false);
-        }, 1500);
+        }
     };
 
     return (
@@ -223,12 +254,23 @@ export function RestApiConfigModal({ onBack, onConnect, editingConnector }: Rest
                                     <div className="animate-in fade-in slide-in-from-top-4 duration-300">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-[10px] font-black uppercase text-neutral-400">Response Body</span>
-                                            <span className="text-[10px] font-black uppercase text-emerald-600 flex items-center gap-1">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-600"></div> Status {testResult.status}
+                                            <span className={cn(
+                                                "text-[10px] font-black uppercase flex items-center gap-1",
+                                                testResult.status === 'ERROR' || (typeof testResult.status === 'number' && testResult.status >= 400)
+                                                    ? "text-rose-500"
+                                                    : "text-emerald-600"
+                                            )}>
+                                                <div className={cn(
+                                                    "w-1.5 h-1.5 rounded-full",
+                                                    testResult.status === 'ERROR' || (typeof testResult.status === 'number' && testResult.status >= 400)
+                                                        ? "bg-rose-500"
+                                                        : "bg-emerald-600"
+                                                )}></div>
+                                                Status {testResult.status}
                                             </span>
                                         </div>
                                         <pre className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-emerald-400 font-mono text-[10px] overflow-x-auto max-h-48">
-                                            {JSON.stringify(testResult.data, null, 2)}
+                                            {typeof testResult.data === 'string' ? testResult.data : JSON.stringify(testResult.data, null, 2)}
                                         </pre>
                                     </div>
                                 )}

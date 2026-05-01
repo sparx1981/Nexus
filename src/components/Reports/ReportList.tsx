@@ -11,7 +11,7 @@ interface ReportListProps {
 
 export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportListProps) => {
     return (
-        <div className="flex-1 overflow-y-auto p-8 bg-neutral-50 dark:bg-[#050505]">
+        <div className="flex-1 overflow-y-auto p-8" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
             <div className="max-w-6xl mx-auto">
                 <div className="flex items-center justify-between mb-8">
                     <div>
@@ -28,7 +28,7 @@ export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportList
                 </div>
 
                 {reports.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-32 bg-white dark:bg-[#0A0A0A] border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-3xl">
+                    <div className="flex flex-col items-center justify-center py-32 border-2 border-dashed rounded-3xl" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
                         <FileText className="w-12 h-12 text-neutral-300 mb-4" />
                         <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">No reports available</h3>
                         <p className="text-sm text-neutral-500 mb-6">Generate your first audit or data summary report.</p>
@@ -44,7 +44,8 @@ export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportList
                         {reports.map(report => (
                             <div 
                                 key={report.id}
-                                className="group bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 hover:shadow-xl hover:border-primary-200 transition-all cursor-pointer relative"
+                                className="group rounded-2xl p-6 hover:shadow-xl transition-all cursor-pointer relative border"
+                                style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
                                 onClick={() => onSelect(report.id)}
                             >
                                 <div className="flex items-start justify-between mb-4">

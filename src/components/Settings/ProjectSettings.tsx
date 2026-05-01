@@ -79,7 +79,7 @@ export function ProjectSettings() {
   const isOwner = projectData.ownerId === user?.id;
 
   return (
-    <div className="max-w-4xl mx-auto py-8">
+    <div className="max-w-4xl mx-auto py-8 px-8" style={{ color: 'var(--text-primary)' }}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-neutral-900 dark:text-white">Project Members</h2>
@@ -95,9 +95,9 @@ export function ProjectSettings() {
         )}
       </div>
 
-      <div className="bg-white dark:bg-[#121212] rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-sm overflow-hidden">
+      <div className="rounded-2xl shadow-sm overflow-hidden border" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
         <table className="w-full text-left">
-          <thead className="bg-neutral-50 dark:bg-[#0A0A0A] border-b border-neutral-200 dark:border-neutral-800">
+          <thead className="border-b" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
             <tr>
               <th className="px-6 py-4 text-[10px] font-bold text-neutral-400 uppercase tracking-widest leading-none">Member</th>
               <th className="px-6 py-4 text-[10px] font-bold text-neutral-400 uppercase tracking-widest leading-none">Role</th>

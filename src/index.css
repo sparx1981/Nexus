@@ -11,7 +11,9 @@
   }
 }
 
-/* Color Schemes */
+/* ─── Color Schemes ─────────────────────────────────────────────────── */
+
+/* Ocean – cool blue (default) */
 .scheme-ocean {
   --color-primary: #1A56DB;
   --color-primary-light: #EFF6FF;
@@ -23,6 +25,7 @@
   --text-secondary: #475569;
 }
 
+/* Garnet – deep rose / mauve */
 .scheme-garnet {
   --color-primary: #D3045D;
   --color-primary-light: #FFF5F8;
@@ -34,6 +37,7 @@
   --text-secondary: #7C2D44;
 }
 
+/* Emerald – forest green */
 .scheme-emerald {
   --color-primary: #34542C;
   --color-primary-light: #F2FDF2;
@@ -45,6 +49,7 @@
   --text-secondary: #3A6B38;
 }
 
+/* Midnight – deep navy/purple dark mode */
 .scheme-midnight {
   --color-primary: #0C287B;
   --color-primary-light: #1A1A2E;
@@ -56,6 +61,7 @@
   --text-secondary: #94A3B8;
 }
 
+/* Crimson – bold red/violet */
 .scheme-crimson {
   --color-primary: #D41414;
   --color-primary-light: #FFF5F5;
@@ -66,6 +72,128 @@
   --text-primary: #1A0000;
   --text-secondary: #7F1D1D;
 }
+
+/* Royal Gemstone – cobalt / amethyst */
+.scheme-royal {
+  --color-primary: #0C8EF4;
+  --color-primary-light: #EFF7FF;
+  --color-accent: #A162A1;
+  --bg-primary: #F4F6FB;
+  --bg-surface: #FFFFFF;
+  --border-color: #C7D9F5;
+  --text-primary: #0A1628;
+  --text-secondary: #2B384C;
+}
+
+/* Sunset – warm amber/orange */
+.scheme-sunset {
+  --color-primary: #E85D04;
+  --color-primary-light: #FFF8F0;
+  --color-accent: #F3A712;
+  --bg-primary: #FFFBF5;
+  --bg-surface: #FFFFFF;
+  --border-color: #FDDCB5;
+  --text-primary: #1C0800;
+  --text-secondary: #7C3D0A;
+}
+
+/* Forest – deep teal/green */
+.scheme-forest {
+  --color-primary: #0D7A5F;
+  --color-primary-light: #ECFDF5;
+  --color-accent: #06B6D4;
+  --bg-primary: #F0FDF9;
+  --bg-surface: #FFFFFF;
+  --border-color: #A7F3D0;
+  --text-primary: #022C22;
+  --text-secondary: #065F46;
+}
+
+/* Lavender – soft violet / indigo */
+.scheme-lavender {
+  --color-primary: #7C3AED;
+  --color-primary-light: #F5F3FF;
+  --color-accent: #A78BFA;
+  --bg-primary: #FAFAFF;
+  --bg-surface: #FFFFFF;
+  --border-color: #DDD6FE;
+  --text-primary: #1E1040;
+  --text-secondary: #5B21B6;
+}
+
+/* Rose – warm pink */
+.scheme-rose {
+  --color-primary: #C4214A;
+  --color-primary-light: #FFF1F4;
+  --color-accent: #EC849A;
+  --bg-primary: #FFF6F8;
+  --bg-surface: #FFFFFF;
+  --border-color: #FBCFE8;
+  --text-primary: #1A0010;
+  --text-secondary: #881337;
+}
+
+/* Slate – cool monochrome */
+.scheme-slate {
+  --color-primary: #334155;
+  --color-primary-light: #F1F5F9;
+  --color-accent: #64748B;
+  --bg-primary: #F8FAFC;
+  --bg-surface: #FFFFFF;
+  --border-color: #CBD5E1;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+}
+
+/* Amber – golden warm */
+.scheme-amber {
+  --color-primary: #B45309;
+  --color-primary-light: #FFFBEB;
+  --color-accent: #D97706;
+  --bg-primary: #FEFCE8;
+  --bg-surface: #FFFFFF;
+  --border-color: #FDE68A;
+  --text-primary: #1C1100;
+  --text-secondary: #92400E;
+}
+
+/* Ruby Charcoal – dark red/grey */
+.scheme-ruby {
+  --color-primary: #D91B24;
+  --color-primary-light: #2A1010;
+  --color-accent: #C4C4C4;
+  --bg-primary: #1A1010;
+  --bg-surface: #221414;
+  --border-color: #3D1A1A;
+  --text-primary: #F5E6E6;
+  --text-secondary: #C4C4C4;
+}
+
+/* Copper – burnt sienna */
+.scheme-copper {
+  --color-primary: #9A3412;
+  --color-primary-light: #FFF7ED;
+  --color-accent: #EA580C;
+  --bg-primary: #FFFAF7;
+  --bg-surface: #FFFFFF;
+  --border-color: #FED7AA;
+  --text-primary: #1C0A00;
+  --text-secondary: #7C2D12;
+}
+
+/* Abyss – near-black with cyan accent */
+.scheme-abyss {
+  --color-primary: #06B6D4;
+  --color-primary-light: #0E1B2A;
+  --color-accent: #22D3EE;
+  --bg-primary: #070D12;
+  --bg-surface: #0D1B26;
+  --border-color: #132030;
+  --text-primary: #E0F7FC;
+  --text-secondary: #7ECFE0;
+}
+
+/* ─── Base Layer ─────────────────────────────────────────────────────── */
 
 @layer base {
   body {
@@ -100,4 +228,154 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* ─── Dark-mode Tailwind class overrides ─────────────────────────────
+   When a color scheme is active on <html>, intercept all hardcoded
+   dark-mode backgrounds/borders/text and route them through CSS vars.
+   This makes every component respond to the scheme without touching
+   individual component files.
+──────────────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+
+  /* ── Primary content backgrounds (deepest layer) */
+  html[class*="scheme-"] .dark\:bg-\[\#050505\],
+  html[class*="scheme-"] .dark\:bg-\[\#0A0A0A\],
+  html[class*="scheme-"] .dark\:bg-slate-950,
+  html[class*="scheme-"] .dark\:bg-neutral-900 {
+    background-color: var(--bg-primary) !important;
+  }
+
+  /* ── Surface backgrounds (cards, panels, modals) */
+  html[class*="scheme-"] .dark\:bg-\[\#121212\],
+  html[class*="scheme-"] .dark\:bg-\[\#1E293B\],
+  html[class*="scheme-"] .dark\:bg-slate-900,
+  html[class*="scheme-"] .dark\:bg-neutral-800 {
+    background-color: var(--bg-surface) !important;
+  }
+
+  /* ── Slightly elevated / inset areas */
+  html[class*="scheme-"] .dark\:bg-\[\#1A1A1A\],
+  html[class*="scheme-"] .dark\:bg-\[\#0F172A\],
+  html[class*="scheme-"] .dark\:bg-slate-800,
+  html[class*="scheme-"] .dark\:bg-neutral-700 {
+    background-color: color-mix(in srgb, var(--bg-surface) 80%, var(--color-primary) 20%) !important;
+  }
+
+  /* ── Semi-transparent dark overlays → scheme-tinted */
+  html[class*="scheme-"] .dark\:bg-slate-900\/50,
+  html[class*="scheme-"] .dark\:bg-slate-900\/20,
+  html[class*="scheme-"] .dark\:bg-slate-800\/50,
+  html[class*="scheme-"] .dark\:bg-slate-800\/20,
+  html[class*="scheme-"] .dark\:bg-neutral-800\/10,
+  html[class*="scheme-"] .dark\:bg-\[\#1A1A1A\]\/50 {
+    background-color: color-mix(in srgb, var(--bg-surface) 60%, transparent 40%) !important;
+  }
+
+  /* ── Black fills */
+  html[class*="scheme-"] .dark\:bg-black {
+    background-color: var(--bg-primary) !important;
+  }
+
+  /* ── Borders */
+  html[class*="scheme-"] .dark\:border-neutral-800,
+  html[class*="scheme-"] .dark\:border-neutral-900,
+  html[class*="scheme-"] .dark\:border-slate-800,
+  html[class*="scheme-"] .dark\:border-slate-700,
+  html[class*="scheme-"] .dark\:border-neutral-700 {
+    border-color: var(--border-color) !important;
+  }
+
+  /* ── Primary text */
+  html[class*="scheme-"] .dark\:text-white,
+  html[class*="scheme-"] .dark\:text-slate-100,
+  html[class*="scheme-"] .dark\:text-neutral-100 {
+    color: var(--text-primary) !important;
+  }
+
+  /* ── Secondary text */
+  html[class*="scheme-"] .dark\:text-neutral-400,
+  html[class*="scheme-"] .dark\:text-slate-400,
+  html[class*="scheme-"] .dark\:text-slate-500,
+  html[class*="scheme-"] .dark\:text-neutral-500 {
+    color: var(--text-secondary) !important;
+  }
+
+  /* ── Light/medium text */
+  html[class*="scheme-"] .dark\:text-slate-300,
+  html[class*="scheme-"] .dark\:text-neutral-300,
+  html[class*="scheme-"] .dark\:text-slate-200,
+  html[class*="scheme-"] .dark\:text-neutral-200 {
+    color: var(--text-primary) !important;
+    opacity: 0.75;
+  }
+
+  /* ── Divide colours */
+  html[class*="scheme-"] .dark\:divide-slate-800 > *,
+  html[class*="scheme-"] .dark\:divide-neutral-800 > * {
+    border-color: var(--border-color) !important;
+  }
+
+  /* ── Ring / focus rings */
+  html[class*="scheme-"] .dark\:ring-neutral-800 {
+    --tw-ring-color: var(--border-color) !important;
+  }
+
+  /* ── Hover states that use surface colours */
+  html[class*="scheme-"] .dark\:hover\:bg-neutral-800:hover,
+  html[class*="scheme-"] .dark\:hover\:bg-slate-800:hover,
+  html[class*="scheme-"] .dark\:hover\:bg-slate-700:hover {
+    background-color: color-mix(in srgb, var(--bg-surface) 85%, var(--color-primary) 15%) !important;
+  }
+}
+
+/* ─── Light-mode scheme enforcement ────────────────────────────────
+   Make sure light-themed scheme surfaces don't get washed out when
+   the browser is in LIGHT mode either — keep everything consistent. */
+
+html[class*="scheme-"] .bg-white {
+  background-color: var(--bg-surface) !important;
+}
+
+html[class*="scheme-"] .bg-neutral-50 {
+  background-color: var(--bg-primary) !important;
+}
+
+html[class*="scheme-"] .border-neutral-200,
+html[class*="scheme-"] .border-neutral-100 {
+  border-color: var(--border-color) !important;
+}
+
+/* Keep these specific dark scheme overrides scoped to non-dark OS too */
+html[class*="scheme-midnight"] .bg-white,
+html[class*="scheme-ruby"] .bg-white,
+html[class*="scheme-abyss"] .bg-white {
+  background-color: var(--bg-surface) !important;
+}
+
+html[class*="scheme-midnight"] .bg-neutral-50,
+html[class*="scheme-ruby"] .bg-neutral-50,
+html[class*="scheme-abyss"] .bg-neutral-50 {
+  background-color: var(--bg-primary) !important;
+}
+
+html[class*="scheme-midnight"] .text-neutral-900,
+html[class*="scheme-ruby"] .text-neutral-900,
+html[class*="scheme-abyss"] .text-neutral-900 {
+  color: var(--text-primary) !important;
+}
+
+html[class*="scheme-midnight"] .text-neutral-500,
+html[class*="scheme-midnight"] .text-neutral-600,
+html[class*="scheme-ruby"] .text-neutral-500,
+html[class*="scheme-ruby"] .text-neutral-600,
+html[class*="scheme-abyss"] .text-neutral-500,
+html[class*="scheme-abyss"] .text-neutral-600 {
+  color: var(--text-secondary) !important;
+}
+
+html[class*="scheme-midnight"] .border-neutral-200,
+html[class*="scheme-ruby"] .border-neutral-200,
+html[class*="scheme-abyss"] .border-neutral-200 {
+  border-color: var(--border-color) !important;
 }

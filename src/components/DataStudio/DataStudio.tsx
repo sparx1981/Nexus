@@ -134,7 +134,7 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
       {/* Module Navbar */}
-      <div className="h-12 border-b border-neutral-200 bg-white flex items-center px-6 gap-6 shrink-0 z-20 dark:bg-slate-900 dark:border-slate-800">
+      <div className="h-12 border-b flex items-center px-6 gap-6 shrink-0 z-20" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
         {[
           { id: 'schema', label: 'Schema View' },
           { id: 'table', label: 'Table View' },
@@ -166,7 +166,7 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
         </button>
       </div>
 
-      <div className="flex-1 relative overflow-hidden bg-white dark:bg-slate-950 transition-colors duration-300">
+      <div className="flex-1 relative overflow-hidden transition-colors duration-300" style={{ background: 'var(--bg-primary)' }}>
         {activeSubTab === 'schema' && <SchemaView />}
         {activeSubTab === 'table' && <DataTableView />}
         {activeSubTab === 'query' && <QueryBuilderView />}
@@ -539,8 +539,8 @@ function DataTableView() {
     );
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-white dark:bg-slate-950 transition-colors duration-300">
-            <div className="h-14 border-b border-neutral-200 dark:border-slate-800 px-6 flex items-center gap-4 bg-neutral-50/50 dark:bg-slate-900/50">
+        <div className="flex-1 flex flex-col h-full transition-colors duration-300" style={{ background: 'var(--bg-surface)' }}>
+            <div className="h-14 border-b px-6 flex items-center gap-4" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
                 <select 
                     value={selectedTableId || ''}
                     onChange={(e) => setSelectedTableId(e.target.value)}
@@ -810,7 +810,7 @@ function DataTableView() {
 
 
 function QueryBuilderView() {
-    const { tables } = useSchemaStore();
+    const { tables, restApiConnectors } = useSchemaStore();
     const { selectedProjectId } = useAuthStore();
     const [selectedTable, setSelectedTable] = useState(tables[0]?.id || '');
     const currentTable = tables.find(t => t.id === selectedTable);
@@ -859,15 +859,16 @@ function QueryBuilderView() {
 
     return (
         <div className="flex-1 flex overflow-hidden">
-            <aside className="w-80 bg-white dark:bg-[#121212] border-r border-neutral-200 dark:border-neutral-800 p-6 overflow-y-auto space-y-8">
+            <aside className="w-80 border-r p-6 overflow-y-auto space-y-8" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
                 <section className="space-y-4">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Select Table</label>
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Select Datasource</label>
                     <select 
                         value={selectedTable}
                         onChange={(e) => setSelectedTable(e.target.value)}
                         className="w-full px-3 py-2 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white"
                     >
-                        {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                        {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
                     </select>
                 </section>
 
@@ -957,7 +958,7 @@ function QueryBuilderView() {
                 </button>
             </aside>
 
-            <main className="flex-1 bg-neutral-50 dark:bg-[#0A0A0A] p-8 overflow-y-auto">
+            <main className="flex-1 p-8 overflow-y-auto" style={{ background: 'var(--bg-primary)' }}>
                 {results.length > 0 ? (
                     <div className="bg-white dark:bg-[#121212] rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden">
                         <div className="px-6 py-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
@@ -1050,7 +1051,7 @@ function SourcesView({ onNavigate }: { onNavigate?: (tab: any) => void }) {
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {connectors.map(c => (
-                    <div key={c.id} className="bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group">
+                    <div key={c.id} className="rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group border" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center justify-between mb-6">
                             <div className="w-12 h-12 rounded-2xl bg-neutral-100 dark:bg-neutral-800 text-neutral-400 dark:text-neutral-500 flex items-center justify-center group-hover:scale-110 transition-transform">
                                 {c.icon}
@@ -1092,7 +1093,7 @@ function SourcesView({ onNavigate }: { onNavigate?: (tab: any) => void }) {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {restApiConnectors.map(connector => (
-                    <div key={connector.id} className="bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 flex items-center justify-between group/card hover:border-primary-600 transition-all">
+                    <div key={connector.id} className="rounded-2xl p-5 flex items-center justify-between group/card hover:border-primary-600 transition-all border" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/20 text-primary-600 flex items-center justify-center">
                           <Globe className="w-5 h-5" />

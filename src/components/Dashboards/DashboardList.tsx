@@ -29,7 +29,7 @@ export const DashboardList = ({ dashboards, onSelect, onCreate, onDelete }: Dash
                 </div>
 
                 {dashboards.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 bg-white border-2 border-dashed border-neutral-200 rounded-3xl">
+                    <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed rounded-3xl" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}>
                         <div className="w-16 h-16 bg-neutral-50 flex items-center justify-center rounded-2xl mb-4">
                             <BarChart3 className="w-8 h-8 text-neutral-300" />
                         </div>
@@ -47,7 +47,7 @@ export const DashboardList = ({ dashboards, onSelect, onCreate, onDelete }: Dash
                         {dashboards.map(dashboard => (
                             <div 
                                 key={dashboard.id}
-                                className="group relative bg-white border border-neutral-200 rounded-2xl p-6 hover:shadow-xl hover:border-primary-200 transition-all cursor-pointer"
+                                className="group relative rounded-2xl p-6 hover:shadow-xl transition-all cursor-pointer border" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}
                                 onClick={() => onSelect(dashboard.id)}
                             >
                                 <div className="flex items-start justify-between mb-4">

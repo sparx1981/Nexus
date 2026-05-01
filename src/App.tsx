@@ -115,12 +115,13 @@ export default function App() {
   const [showSearch, setShowSearch] = useState(false);
   
   // Theme state
-  const [colorScheme, setColorScheme] = useState<'ocean' | 'garnet' | 'emerald' | 'midnight' | 'crimson'>(() => (localStorage.getItem('nexus-scheme') as any) || 'ocean');
+  type SchemeId = 'ocean' | 'garnet' | 'emerald' | 'midnight' | 'crimson' | 'royal' | 'sunset' | 'forest' | 'lavender' | 'rose' | 'slate' | 'amber' | 'ruby' | 'copper' | 'abyss';
+  const [colorScheme, setColorScheme] = useState<SchemeId>(() => (localStorage.getItem('nexus-scheme') as any) || 'ocean');
   
   useEffect(() => {
     const root = window.document.documentElement;
     // Remove all existing scheme classes
-    ['scheme-ocean', 'scheme-garnet', 'scheme-emerald', 'scheme-midnight', 'scheme-crimson'].forEach(cls => {
+    ['scheme-ocean','scheme-garnet','scheme-emerald','scheme-midnight','scheme-crimson','scheme-royal','scheme-sunset','scheme-forest','scheme-lavender','scheme-rose','scheme-slate','scheme-amber','scheme-ruby','scheme-copper','scheme-abyss'].forEach(cls => {
       root.classList.remove(cls);
     });
     // Add current scheme
@@ -404,27 +405,61 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-neutral-100/50" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
-              <Palette className="w-3.5 h-3.5 text-neutral-400" />
-              <div className="flex items-center gap-1.5 ml-1">
-                {[
-                  { name: 'ocean', color: '#1A56DB' },
-                  { name: 'garnet', color: '#D3045D' },
-                  { name: 'emerald', color: '#34542C' },
-                  { name: 'midnight', color: '#0C287B' },
-                  { name: 'crimson', color: '#D41414' }
-                ].map(scheme => (
-                  <button
-                    key={scheme.name}
-                    onClick={() => setColorScheme(scheme.name as any)}
-                    className={cn(
-                      "w-3 h-3 rounded-full transition-all hover:scale-125 cursor-pointer relative",
-                      colorScheme === scheme.name && "ring-2 ring-offset-2 ring-neutral-400"
-                    )}
-                    style={{ backgroundColor: scheme.color }}
-                    title={scheme.name.charAt(0).toUpperCase() + scheme.name.slice(1)}
-                  />
-                ))}
+            {/* Palette hover trigger */}
+            <div className="relative group/palette">
+              <button
+                className="w-8 h-8 flex items-center justify-center rounded-xl transition-all hover:scale-110"
+                style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}
+                title="Color Scheme"
+              >
+                <Palette className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
+              </button>
+              {/* Slide-out palette panel */}
+              <div
+                className="absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-2xl p-4 border opacity-0 pointer-events-none group-hover/palette:opacity-100 group-hover/palette:pointer-events-auto transition-all duration-200 origin-top-right scale-95 group-hover/palette:scale-100"
+                style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)', width: 220 }}
+              >
+                <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--text-secondary)' }}>Color Scheme</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    { name: 'ocean',    color: '#1A56DB', label: 'Ocean' },
+                    { name: 'garnet',   color: '#D3045D', label: 'Garnet' },
+                    { name: 'emerald',  color: '#34542C', label: 'Emerald' },
+                    { name: 'midnight', color: '#0C287B', label: 'Midnight' },
+                    { name: 'crimson',  color: '#D41414', label: 'Crimson' },
+                    { name: 'royal',    color: '#0C8EF4', label: 'Royal' },
+                    { name: 'sunset',   color: '#E85D04', label: 'Sunset' },
+                    { name: 'forest',   color: '#0D7A5F', label: 'Forest' },
+                    { name: 'lavender', color: '#7C3AED', label: 'Lavender' },
+                    { name: 'rose',     color: '#C4214A', label: 'Rose' },
+                    { name: 'slate',    color: '#334155', label: 'Slate' },
+                    { name: 'amber',    color: '#B45309', label: 'Amber' },
+                    { name: 'ruby',     color: '#D91B24', label: 'Ruby' },
+                    { name: 'copper',   color: '#9A3412', label: 'Copper' },
+                    { name: 'abyss',    color: '#06B6D4', label: 'Abyss' },
+                  ] as const).map(scheme => (
+                    <button
+                      key={scheme.name}
+                      onClick={() => setColorScheme(scheme.name as any)}
+                      className="flex flex-col items-center gap-1 group/swatch"
+                      title={scheme.label}
+                    >
+                      <div
+                        className={cn(
+                          "w-7 h-7 rounded-full transition-all group-hover/swatch:scale-110",
+                          colorScheme === scheme.name && "ring-2 ring-offset-2 scale-110"
+                        )}
+                        style={{
+                          backgroundColor: scheme.color,
+                          boxShadow: colorScheme === scheme.name ? `0 0 0 2px ${scheme.color}` : undefined,
+                          outlineOffset: '2px',
+                          outline: colorScheme === scheme.name ? `2px solid ${scheme.color}` : 'none'
+                        }}
+                      />
+                      <span className="text-[8px] font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>{scheme.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

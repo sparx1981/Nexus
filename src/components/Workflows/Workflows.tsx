@@ -75,7 +75,7 @@ export function Workflows() {
 
   if (selectedWorkflowId) {
     return (
-      <div className="flex-1 flex flex-col h-full bg-white dark:bg-slate-950 relative transition-colors duration-300">
+      <div className="flex-1 flex flex-col h-full relative transition-colors duration-300" style={{ background: "var(--bg-surface)" }}>
         <button 
           onClick={() => setSelectedWorkflowId(null)}
           className="absolute top-4 left-4 z-[30] p-2 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg text-neutral-400 group transition-colors"
@@ -92,9 +92,9 @@ export function Workflows() {
   const filtered = workflows.filter(w => w.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-neutral-50 dark:bg-[#0A0A0A] overflow-hidden">
+    <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       {/* Header */}
-      <div className="h-14 border-b border-neutral-200 bg-white px-8 flex items-center justify-between shrink-0 dark:bg-slate-900 dark:border-slate-800">
+      <div className="h-14 border-b px-8 flex items-center justify-between shrink-0" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}>
         <div className="relative w-96">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-slate-500" />
           <input 
@@ -124,7 +124,7 @@ export function Workflows() {
               <div 
                 key={w.id}
                 onClick={() => setSelectedWorkflowId(w.id)}
-                className="bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative cursor-pointer"
+                className="rounded-2xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative cursor-pointer border" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-amber-500/10">

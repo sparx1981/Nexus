@@ -135,9 +135,9 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
   );
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-neutral-50 dark:bg-[#0A0A0A] overflow-hidden">
+    <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ background: "var(--bg-primary)" }}>
       {/* Search Header */}
-      <div className="h-14 border-b border-neutral-200 bg-white px-8 flex items-center justify-between shrink-0 dark:bg-[#121212] dark:border-neutral-800">
+      <div className="h-14 border-b px-8 flex items-center justify-between shrink-0" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}>
         <div className="relative w-96">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
           <input 
@@ -168,7 +168,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                 {filteredApps.map(app => (
                     <div 
                         key={app.id} 
-                        className="bg-white border border-neutral-200 dark:bg-[#121212] dark:border-neutral-800 rounded-2xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative cursor-pointer"
+                        className="rounded-2xl p-6 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative cursor-pointer border" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}
                         onClick={() => onSelectApp(app.id)}
                     >
                         <div className="flex items-start justify-between mb-4">
@@ -240,7 +240,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
       {showAddModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm shadow-2xl" onClick={() => setShowAddModal(false)}></div>
-              <div className="relative bg-white dark:bg-[#121212] rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="relative rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}>
                   <div className="px-8 py-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50">
                       <div>
                         <h3 className="font-bold text-neutral-900 dark:text-white">
