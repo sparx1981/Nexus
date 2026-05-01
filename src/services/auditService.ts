@@ -6,7 +6,7 @@ export async function logAudit(projectId: string, action: string, details: any) 
   if (!user) return;
 
   try {
-    await addDoc(collection(db, 'projects', projectId, 'auditLogs'), {
+    await addDoc(collection(db, 'workspaces', projectId, 'auditLogs'), {
       userId: user.uid,
       userEmail: user.email,
       action,

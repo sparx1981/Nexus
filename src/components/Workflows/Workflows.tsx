@@ -13,6 +13,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { handleFirestoreError, OperationType } from '../../services/dataService';
 import { db } from '../../lib/firebase';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { cn } from '../../lib/utils';
@@ -32,11 +33,13 @@ export function Workflows() {
     if (!selectedProjectId) return;
 
     setLoading(true);
-    const q = query(collection(db, 'projects', selectedProjectId, 'workflows'));
+    const q = query(collection(db, 'workspaces', selectedProjectId, 'workflows'));
     const unsub = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setWorkflows(docs);
       setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `workspaces/${selectedProjectId}/workflows`);
     });
 
     return () => unsub();
@@ -47,7 +50,7 @@ export function Workflows() {
     if (!newWorkflowName || !selectedProjectId) return;
 
     const id = newWorkflowName.toLowerCase().replace(/\s+/g, '_') + '_' + Math.random().toString(36).substr(2, 4);
-    await setDoc(doc(db, 'projects', selectedProjectId, 'workflows', id), {
+    await setDoc(doc(db, 'workspaces', selectedProjectId, 'workflows', id), {
       id,
       name: newWorkflowName,
       status: 'draft',
@@ -66,7 +69,7 @@ export function Workflows() {
     e.stopPropagation();
     if (!selectedProjectId) return;
     if (confirm('Delete this workflow?')) {
-      await deleteDoc(doc(db, 'projects', selectedProjectId, 'workflows', id));
+      await deleteDoc(doc(db, 'workspaces', selectedProjectId, 'workflows', id));
     }
   };
 

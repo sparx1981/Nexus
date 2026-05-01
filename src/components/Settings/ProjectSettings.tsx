@@ -10,6 +10,7 @@ import {
   Check,
   MoreVertical
 } from 'lucide-react';
+import { handleFirestoreError, OperationType } from '../../services/dataService';
 import { useAuthStore } from '../../store/authStore';
 import { db } from '../../lib/firebase';
 import { doc, onSnapshot, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
@@ -30,6 +31,8 @@ export function ProjectSettings() {
       if (doc.exists()) {
         setProjectData(doc.data());
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `workspaces/${selectedProjectId}`);
     });
 
     return () => unsub();

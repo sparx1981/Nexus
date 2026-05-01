@@ -47,6 +47,7 @@ import { motion } from 'motion/react';
 import { useBuilderStore } from '../../store/builderStore';
 import { useAuthStore } from '../../store/authStore';
 import { dataService } from '../../services/dataService';
+import { handleFirestoreError, OperationType } from '../../services/dataService';
 import { db } from '../../lib/firebase';
 import { doc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 import { useSchemaStore } from '../../store/schemaStore';
@@ -137,7 +138,7 @@ export function AppBuilder() {
     const handleSave = async () => {
         if (!selectedProjectId || !currentAppId) return;
         try {
-            await setDoc(doc(db, 'projects', selectedProjectId, 'apps', currentAppId), {
+            await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', currentAppId), {
                 id: currentAppId,
                 projectId: selectedProjectId,
                 components,
@@ -157,19 +158,21 @@ export function AppBuilder() {
             return;
         }
 
-        const unsub = onSnapshot(doc(db, 'projects', selectedProjectId, 'apps', currentAppId), (doc) => {
+        const unsub = onSnapshot(doc(db, 'workspaces', selectedProjectId, 'apps', currentAppId), (doc) => {
             if (doc.exists()) {
                 const data = doc.data();
                 setComponents(data.components || []);
                 setCurrentAppData(data);
             }
+        }, (error) => {
+            handleFirestoreError(error, OperationType.GET, `workspaces/${selectedProjectId}/apps/${currentAppId}`);
         });
         return () => unsub();
     }, [selectedProjectId, currentAppId, setComponents]);
 
     const handleUpdateAppSettings = async (updates: any) => {
         if (!selectedProjectId || !currentAppId) return;
-        await setDoc(doc(db, 'projects', selectedProjectId, 'apps', currentAppId), updates, { merge: true });
+        await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', currentAppId), updates, { merge: true });
         showToast('Settings updated');
     };
 
@@ -1001,9 +1004,11 @@ function PropertiesPanel({ dataSourceId }: { dataSourceId?: string }) {
     
     useEffect(() => {
         if (!selectedProjectId) return;
-        const q = query(collection(db, 'projects', selectedProjectId, 'apps'));
+        const q = query(collection(db, 'workspaces', selectedProjectId, 'apps'));
         const unsub = onSnapshot(q, (snapshot) => {
             setAllApps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }, (error) => {
+            handleFirestoreError(error, OperationType.LIST, `workspaces/${selectedProjectId}/apps`);
         });
         return () => unsub();
     }, [selectedProjectId]);

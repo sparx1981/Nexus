@@ -36,7 +36,7 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
 
             try {
                 const q = query(
-                    collection(db, 'projects', selectedProjectId, 'datasources', card.dataSourceId, 'records'),
+                    collection(db, 'workspaces', selectedProjectId, 'datasources', card.dataSourceId, 'records'),
                     limit(50)
                 );
                 const snap = await getDocs(q);

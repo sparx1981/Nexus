@@ -33,6 +33,8 @@ import axios from 'axios';
 import { FieldType } from '../../types';
 
 
+import { handleFirestoreError, OperationType } from '../../services/dataService';
+
 // Advanced expression evaluator for calculated fields
 function evaluateExpression(expr: string, record: any, allRecords: any[]) {
     if (!expr) return '';
@@ -235,11 +237,13 @@ function DataTableView() {
       if (!selectedTableId || !selectedProjectId) return;
 
       setLoading(true);
-      const q = query(collection(db, 'workspaces', selectedProjectId, 'tables', selectedTableId, 'records'));
+      const q = query(collection(db, 'workspaces', selectedProjectId, 'tableData', selectedTableId, 'rows'));
       const unsub = onSnapshot(q, (snapshot) => {
         const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setRecords(docs);
         setLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, `workspaces/${selectedProjectId}/tableData/${selectedTableId}/rows`);
       });
 
       return () => unsub();

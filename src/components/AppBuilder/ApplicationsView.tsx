@@ -17,6 +17,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { useBuilderStore } from '../../store/builderStore';
 import { useSchemaStore } from '../../store/schemaStore';
+import { handleFirestoreError, OperationType } from '../../services/dataService';
 import { db } from '../../lib/firebase';
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { cn } from '../../lib/utils';
@@ -45,11 +46,13 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
     if (!selectedProjectId) return;
 
     setLoading(true);
-    const q = query(collection(db, 'projects', selectedProjectId, 'apps'));
+    const q = query(collection(db, 'workspaces', selectedProjectId, 'apps'));
     const unsub = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setApps(docs);
       setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `workspaces/${selectedProjectId}/apps`);
     });
 
     return () => unsub();
@@ -60,7 +63,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
     if (!newApp.name || !selectedProjectId) return;
 
     if (editingAppId) {
-      await setDoc(doc(db, 'projects', selectedProjectId, 'apps', editingAppId), {
+      await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', editingAppId), {
         name: newApp.name,
         description: newApp.description,
         dataSourceId: newApp.dataSourceId,
@@ -71,7 +74,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
     } else {
       const appId = newApp.name.toLowerCase().replace(/\s+/g, '_') + '_' + Math.random().toString(36).substr(2, 4);
       
-      await setDoc(doc(db, 'projects', selectedProjectId, 'apps', appId), {
+      await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', appId), {
         id: appId,
         name: newApp.name,
         description: newApp.description,
@@ -122,7 +125,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
   const handleDeleteApp = async (id: string) => {
     if (!selectedProjectId) return;
     if (confirm('Are you sure you want to delete this application?')) {
-        await deleteDoc(doc(db, 'projects', selectedProjectId, 'apps', id));
+        await deleteDoc(doc(db, 'workspaces', selectedProjectId, 'apps', id));
     }
   };
 
