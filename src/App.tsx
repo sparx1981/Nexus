@@ -26,8 +26,7 @@ import {
   X,
   Play,
   ChevronDown,
-  Moon,
-  Sun,
+  Palette,
   LayoutGrid
 } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -66,11 +65,15 @@ const SidebarItem = ({ icon, label, active, onClick, collapsed }: SidebarItemPro
     className={cn(
       "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 group",
       active 
-        ? "bg-primary-50 dark:bg-primary-900/10 text-primary-600 dark:text-primary-400 shadow-sm" 
-        : "text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800/50"
+        ? "text-primary-600 shadow-sm" 
+        : "text-neutral-600 hover:bg-neutral-100"
     )}
+    style={{ 
+      backgroundColor: active ? 'var(--color-primary-light)' : 'transparent',
+      color: active ? 'var(--color-primary)' : 'var(--text-secondary)'
+    }}
   >
-    <div className={cn("transition-colors", active ? "text-primary-600 dark:text-primary-400" : "group-hover:text-neutral-900 dark:group-hover:text-slate-200")}>
+    <div className={cn("transition-colors", active ? "" : "group-hover:text-neutral-900")}>
       {icon}
     </div>
     {!collapsed && <span className="font-bold text-sm tracking-tight">{label}</span>}
@@ -112,18 +115,18 @@ export default function App() {
   const [showSearch, setShowSearch] = useState(false);
   
   // Theme state
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('nexus-theme') !== 'light');
+  const [colorScheme, setColorScheme] = useState<'ocean' | 'garnet' | 'emerald' | 'midnight' | 'crimson'>(() => (localStorage.getItem('nexus-scheme') as any) || 'ocean');
   
   useEffect(() => {
     const root = window.document.documentElement;
-    if (isDarkMode) {
-      root.classList.add('dark');
-      localStorage.setItem('nexus-theme', 'dark');
-    } else {
-      root.classList.remove('dark');
-      localStorage.setItem('nexus-theme', 'light');
-    }
-  }, [isDarkMode]);
+    // Remove all existing scheme classes
+    ['scheme-ocean', 'scheme-garnet', 'scheme-emerald', 'scheme-midnight', 'scheme-crimson'].forEach(cls => {
+      root.classList.remove(cls);
+    });
+    // Add current scheme
+    root.classList.add(`scheme-${colorScheme}`);
+    localStorage.setItem('nexus-scheme', colorScheme);
+  }, [colorScheme]);
 
   const { user, isAuthenticated, setUser, logout, selectedProjectId, setSelectedProjectId, setTrimbleAuth } = useAuthStore();
   const { fetchWorkspace } = useWorkspaceStore();
@@ -238,22 +241,22 @@ export default function App() {
   return (
     <div className={cn(
       "flex h-screen overflow-hidden font-sans transition-colors duration-300",
-      "bg-white dark:bg-slate-950 text-neutral-900 dark:text-slate-100"
-    )}>
+    )} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
       {/* Sidebar */}
       <aside 
         className={cn(
-          "bg-white dark:bg-slate-900 border-r border-neutral-200 dark:border-slate-800 transition-all duration-200 flex flex-col z-30 shadow-sm",
-          sidebarCollapsed ? "w-16" : "w-60 shadow-xl shadow-neutral-200/50 dark:shadow-none"
+          "transition-all duration-200 flex flex-col z-30 shadow-sm",
+          sidebarCollapsed ? "w-16" : "w-60 shadow-xl shadow-neutral-200/50"
         )}
+        style={{ background: 'var(--bg-surface)', borderRight: '1px solid var(--border-color)' }}
       >
         {/* Brand */}
-        <div className="h-14 border-b border-neutral-200 dark:border-neutral-800 flex items-center px-4 gap-3 overflow-hidden shrink-0">
-          <div className="w-8 h-8 rounded-xl bg-primary-600 flex items-center justify-center shrink-0 shadow-lg shadow-primary-200 dark:shadow-none">
+        <div className="h-14 flex items-center px-4 gap-3 overflow-hidden shrink-0" style={{ borderBottom: '1px solid var(--border-color)' }}>
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-lg" style={{ background: 'var(--color-primary)' }}>
             <Box className="text-white w-5 h-5" />
           </div>
           {!sidebarCollapsed && (
-            <span className="font-bold text-lg text-neutral-900 dark:text-white tracking-tight uppercase">Nexus</span>
+            <span className="font-bold text-lg tracking-tight uppercase" style={{ color: 'var(--text-primary)' }}>Nexus</span>
           )}
         </div>
 
@@ -315,7 +318,7 @@ export default function App() {
         </nav>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-neutral-200 dark:border-neutral-800 mt-auto">
+        <div className="p-3 mt-auto" style={{ borderTop: '1px solid var(--border-color)' }}>
           <SidebarItem 
             icon={<Settings className="w-5 h-5" />} 
             label="Settings" 
@@ -325,7 +328,7 @@ export default function App() {
           />
           <button 
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="w-full flex items-center gap-3 px-3 py-2 mt-1 rounded-lg text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2 mt-1 rounded-lg text-neutral-400 hover:text-neutral-900 transition-colors"
           >
             {sidebarCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
             {!sidebarCollapsed && <span className="text-sm font-bold">Collapse</span>}
@@ -334,11 +337,11 @@ export default function App() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-950 relative">
+      <main className="flex-1 flex flex-col min-w-0 relative" style={{ background: 'var(--bg-primary)' }}>
         {/* Top Header */}
-        <header className="h-14 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between px-6 shrink-0 bg-white dark:bg-slate-900 z-20">
+        <header className="h-14 flex items-center justify-between px-6 shrink-0 z-20" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-color)' }}>
           <div className="flex items-center gap-4 flex-1">
-            <h1 className="text-lg font-bold text-neutral-900 dark:text-white min-w-[120px]">
+            <h1 className="text-lg font-bold tracking-tight min-w-[120px]" style={{ color: 'var(--text-primary)' }}>
               {activeTab === 'apps' && (editingAppId && currentAppName ? `Applications  ›  ${currentAppName}` : "Applications")}
               {activeTab === 'data' && "Data Studio"}
               {activeTab === 'workflows' && "Workflows"}
@@ -350,7 +353,7 @@ export default function App() {
             
             {/* Global Search */}
             <div className="hidden md:flex relative max-w-sm flex-1">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-slate-500" />
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
               <input 
                 type="text" 
                 value={searchQuery}
@@ -360,7 +363,8 @@ export default function App() {
                 }}
                 onFocus={() => setShowSearch(true)}
                 placeholder="Search resources..."
-                className="w-full pl-10 pr-4 py-1.5 bg-neutral-100 dark:bg-slate-800 border-none rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-600/20 transition-all outline-none text-neutral-900 dark:text-neutral-200 shadow-inner"
+                className="w-full pl-10 pr-4 py-1.5 border-none rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-600/20 transition-all outline-none shadow-inner"
+                style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
               />
 
               {showSearch && searchQuery.length > 1 && (
@@ -399,14 +403,30 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-xl transition-all active:scale-90"
-              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-neutral-100/50" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+              <Palette className="w-3.5 h-3.5 text-neutral-400" />
+              <div className="flex items-center gap-1.5 ml-1">
+                {[
+                  { name: 'ocean', color: '#1A56DB' },
+                  { name: 'garnet', color: '#D3045D' },
+                  { name: 'emerald', color: '#34542C' },
+                  { name: 'midnight', color: '#0C287B' },
+                  { name: 'crimson', color: '#D41414' }
+                ].map(scheme => (
+                  <button
+                    key={scheme.name}
+                    onClick={() => setColorScheme(scheme.name as any)}
+                    className={cn(
+                      "w-3 h-3 rounded-full transition-all hover:scale-125 cursor-pointer relative",
+                      colorScheme === scheme.name && "ring-2 ring-offset-2 ring-neutral-400"
+                    )}
+                    style={{ backgroundColor: scheme.color }}
+                    title={scheme.name.charAt(0).toUpperCase() + scheme.name.slice(1)}
+                  />
+                ))}
+              </div>
+            </div>
 
             {/* Notifications */}
             <div className="relative">

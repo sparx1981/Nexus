@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Table, Relationship } from '../types';
+import { Table, Relationship, RestApiConnector } from '../types';
 import { db } from '../lib/firebase';
 import { doc, setDoc, deleteDoc, updateDoc, collection, addDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useAuthStore } from './authStore';
@@ -7,6 +7,7 @@ import { useAuthStore } from './authStore';
 interface SchemaStore {
   tables: Table[];
   relationships: Relationship[];
+  restApiConnectors: RestApiConnector[];
   nodePositions: Record<string, { x: number; y: number }>;
   selectedTableId: string | null;
   addTable: (table: Table) => Promise<void>;
@@ -19,15 +20,23 @@ interface SchemaStore {
   setRelationships: (rels: Relationship[]) => void;
   setSelectedTableId: (id: string | null) => void;
   loadTables: () => () => void;
+  
+  // REST API Connectors
+  addRestApiConnector: (connector: RestApiConnector) => Promise<void>;
+  updateRestApiConnector: (id: string, updates: Partial<RestApiConnector>) => Promise<void>;
+  deleteRestApiConnector: (id: string) => Promise<void>;
+  setRestApiConnectors: (connectors: RestApiConnector[]) => void;
 }
 
 export const useSchemaStore = create<SchemaStore>((set, get) => ({
   tables: [],
   relationships: [],
+  restApiConnectors: [],
   nodePositions: {},
   selectedTableId: null,
   setTables: (tables) => set({ tables }),
   setRelationships: (relationships) => set({ relationships }),
+  setRestApiConnectors: (restApiConnectors) => set({ restApiConnectors }),
   setSelectedTableId: (selectedTableId) => set({ selectedTableId }),
   loadTables: () => {
     const wsId = useAuthStore.getState().selectedProjectId || 'default';
@@ -42,9 +51,15 @@ export const useSchemaStore = create<SchemaStore>((set, get) => ({
       set({ relationships: relsData });
     });
 
+    const unsubscribeConnectors = onSnapshot(collection(db, 'workspaces', wsId, 'restApiConnectors'), (snapshot) => {
+      const connectorsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as RestApiConnector));
+      set({ restApiConnectors: connectorsData });
+    });
+
     return () => {
         unsubscribe();
         unsubscribeRels();
+        unsubscribeConnectors();
     };
   },
   addTable: async (table) => {
@@ -129,6 +144,34 @@ export const useSchemaStore = create<SchemaStore>((set, get) => ({
             console.error('Failed to persist node position:', e);
         }
     }
+  },
+  addRestApiConnector: async (connector) => {
+    const wsId = useAuthStore.getState().selectedProjectId;
+    if (!wsId) return;
+
+    set((state) => ({ restApiConnectors: [...state.restApiConnectors, connector] }));
+    const connectorRef = doc(db, 'workspaces', wsId, 'restApiConnectors', connector.id);
+    await setDoc(connectorRef, connector);
+  },
+  updateRestApiConnector: async (id, updates) => {
+    const wsId = useAuthStore.getState().selectedProjectId;
+    if (!wsId) return;
+
+    set((state) => ({
+      restApiConnectors: state.restApiConnectors.map((c) => (c.id === id ? { ...c, ...updates } : c))
+    }));
+    const connectorRef = doc(db, 'workspaces', wsId, 'restApiConnectors', id);
+    await updateDoc(connectorRef, updates);
+  },
+  deleteRestApiConnector: async (id) => {
+    const wsId = useAuthStore.getState().selectedProjectId;
+    if (!wsId) return;
+
+    set((state) => ({
+      restApiConnectors: state.restApiConnectors.filter((c) => c.id !== id)
+    }));
+    const connectorRef = doc(db, 'workspaces', wsId, 'restApiConnectors', id);
+    await deleteDoc(connectorRef);
   },
 }));
 

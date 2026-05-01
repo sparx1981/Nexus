@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, Box, Shield, Zap, Search, RefreshCw, Layers } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useAuthStore } from '../../store/authStore';
+import { useSchemaStore } from '../../store/schemaStore';
 
 interface TrimbleConnectViewProps {
     onBack: () => void;
@@ -8,8 +10,39 @@ interface TrimbleConnectViewProps {
 }
 
 export function TrimbleConnectView({ onBack, onConnect }: TrimbleConnectViewProps) {
-    const [step, setStep] = useState<'auth' | 'projects' | 'sync'>('auth');
+    const { trimbleToken } = useAuthStore();
+    const [step, setStep] = useState<'auth' | 'projects' | 'sync'>(trimbleToken ? 'projects' : 'auth');
     const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const { addTable } = useSchemaStore();
+
+    const handleStartSync = async () => {
+        setIsSyncing(true);
+        // Simulate real API progress
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Add a new virtual table representing the Trimble data
+        addTable({
+            id: `trimble_${Date.now()}`,
+            name: `Trimble: ${mockProjects.find(p => selectedProjects.includes(p.id))?.name || 'Project Data'}`,
+            fields: [
+                { id: 'c1', name: 'Model ID', type: 'text' as any, required: true },
+                { id: 'c2', name: 'Component Name', type: 'text' as any, required: true },
+                { id: 'c3', name: 'Revision', type: 'number' as any, required: false },
+                { id: 'c4', name: 'Status', type: 'single_select' as any, options: ['Draft', 'Approved', 'Flagged'], required: true },
+                { id: 'c5', name: 'Linked Issue', type: 'text' as any, required: false }
+            ]
+        });
+
+        setIsSyncing(false);
+        onConnect();
+    };
+
+    useEffect(() => {
+        if (trimbleToken && step === 'auth') {
+            setStep('projects');
+        }
+    }, [trimbleToken, step]);
 
     const mockProjects = [
         { id: 'p1', name: 'Downtown Redevelopment', region: 'NA', lastSync: '2 days ago' },
@@ -132,10 +165,21 @@ export function TrimbleConnectView({ onBack, onConnect }: TrimbleConnectViewProp
                         </section>
 
                         <button 
-                            onClick={onConnect}
-                            className="w-full py-4 bg-primary-600 text-white font-bold rounded-xl shadow-xl shadow-primary-100 hover:bg-primary-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+                            onClick={handleStartSync}
+                            disabled={isSyncing}
+                            className="w-full py-4 bg-primary-600 text-white font-bold rounded-xl shadow-xl shadow-primary-100 hover:bg-primary-700 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-wait"
                         >
-                            <RefreshCw className="w-5 h-5" /> Start Initial Sync
+                            {isSyncing ? (
+                                <>
+                                    <RefreshCw className="w-5 h-5 animate-spin" />
+                                    Synchronizing Model Data...
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw className="w-5 h-5" />
+                                    Start Initial Sync
+                                </>
+                            )}
                         </button>
                     </div>
                 )}

@@ -101,6 +101,26 @@ export interface ComponentConfig {
   properties: Record<string, any>;
   dataBinding?: string; // Field reference
   position?: { x: number; y: number };
+  size?: { width: number; height: number };
+}
+
+export interface RestApiConnector {
+  id: string;
+  name: string;
+  baseUrl: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  headers: { key: string; value: string }[];
+  params: { key: string; value: string }[];
+  authType: 'none' | 'bearer' | 'apiKey';
+  authConfig: {
+    token?: string;
+    key?: string;
+    value?: string;
+    addTo?: 'header' | 'query';
+  };
+  status: 'active' | 'error' | 'pending';
+  lastTested?: string;
+  schema?: string;
 }
 
 export interface CanvasState {

@@ -283,14 +283,54 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                             </div>
 
                             {selectedNode.data.type === 'record_created' && (
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Target Table</label>
-                                    <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
+                                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
+                                    <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Target Table</label>
+                                    <select 
+                                        value={(selectedNode.data as any).tableId || ''}
+                                        onChange={(e) => {
+                                            setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, tableId: e.target.value, description: `Table: ${tables.find(t => t.id === e.target.value)?.name || e.target.value}` } } : n));
+                                        }}
+                                        className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white"
+                                    >
+                                        <option value="">Select table...</option>
                                         {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
                                 </div>
-                            )}                             {selectedNode.data.type === 'send_email' && (
-                                <>
+                            )}
+
+                            {selectedNode.data.type === 'webhook' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Webhook ID</label>
+                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" value={selectedNode.id} readOnly />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Secret Key</label>
+                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white font-mono" type="password" value="sk_test_12345" />
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectedNode.data.type === 'scheduled' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Frequency</label>
+                                        <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                            <option value="custom">Custom Cron</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Time (UTC)</label>
+                                        <input type="time" className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" defaultValue="09:00" />
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectedNode.data.type === 'send_email' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Recipient</label>
                                         <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="email@example.com" />
@@ -315,11 +355,49 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                                             <option value="invoice">Invoice_Draft.pdf</option>
                                         </select>
                                     </div>
-                                </>
+                                </div>
+                            )}
+
+                            {['create_record', 'update_record'].includes(selectedNode.data.type) && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Target Table</label>
+                                        <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
+                                            {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Field Values</label>
+                                        <div className="p-3 bg-neutral-50 dark:bg-slate-800 rounded-xl border border-neutral-100 dark:border-slate-700 space-y-3">
+                                            <div className="flex gap-2 items-center">
+                                                <select className="flex-1 bg-transparent border-none text-[11px] font-bold text-neutral-600 dark:text-slate-400 outline-none">
+                                                    <option>Status</option>
+                                                    <option>Priority</option>
+                                                </select>
+                                                <span className="text-neutral-300">→</span>
+                                                <input className="flex-1 bg-white dark:bg-slate-900 px-2 py-1 rounded border border-neutral-200 dark:border-slate-700 text-xs" placeholder="Value" />
+                                            </div>
+                                            <button className="w-full py-1 text-[9px] font-bold text-primary-600 border border-dashed border-primary-200 rounded-lg hover:bg-white transition-colors">ADD FIELD</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectedNode.data.type === 'ai_generate' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">AI Prompt</label>
+                                        <textarea className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none h-24 resize-none text-neutral-900 dark:text-white" placeholder="Summarize the previous record..." />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Output Variable</label>
+                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs font-mono outline-none text-primary-600 font-bold" defaultValue="{{ai_summary}}" />
+                                    </div>
+                                </div>
                             )}
 
                             {selectedNode.data.type === 'condition' && (
-                                <>
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
                                      <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Condition Field</label>
                                         <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
@@ -334,7 +412,23 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                                         </select>
                                         <input className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="Value" />
                                     </div>
-                                </>
+                                </div>
+                            )}
+
+                            {selectedNode.data.type === 'delay' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Duration</label>
+                                        <div className="flex gap-2">
+                                            <input type="number" className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" defaultValue="5" />
+                                            <select className="w-24 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
+                                                <option>Min</option>
+                                                <option>Hours</option>
+                                                <option>Days</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
                             )}
                         </div>
                     ) : (

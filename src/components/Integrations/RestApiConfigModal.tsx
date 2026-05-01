@@ -1,21 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChevronLeft, Globe, Play, Save, Plus, X, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useSchemaStore } from '../../store/schemaStore';
+import { useAuthStore } from '../../store/authStore';
+import { RestApiConnector } from '../../types';
 
 interface RestApiConfigModalProps {
     onBack: () => void;
-    onConnect: () => void;
+    onConnect?: () => void;
+    editingConnector?: RestApiConnector | null;
 }
 
-export function RestApiConfigModal({ onBack, onConnect }: RestApiConfigModalProps) {
-    const [config, setConfig] = useState({
+export function RestApiConfigModal({ onBack, onConnect, editingConnector }: RestApiConfigModalProps) {
+    const { addRestApiConnector, updateRestApiConnector } = useSchemaStore();
+    const { selectedProjectId } = useAuthStore();
+    
+    const [config, setConfig] = useState<Omit<RestApiConnector, 'id'>>({
         name: '',
-        url: '',
+        baseUrl: '',
         method: 'GET',
         headers: [{ key: 'Content-Type', value: 'application/json' }],
+        params: [],
         authType: 'none',
-        apiKey: '',
+        authConfig: {
+          addTo: 'header'
+        },
+        status: 'pending'
     });
+
+    useEffect(() => {
+      if (editingConnector) {
+        setConfig({
+          name: editingConnector.name,
+          baseUrl: editingConnector.baseUrl || '',
+          method: editingConnector.method,
+          headers: editingConnector.headers || [],
+          params: editingConnector.params || [],
+          authType: editingConnector.authType,
+          authConfig: editingConnector.authConfig || { addTo: 'header' },
+          status: editingConnector.status,
+          lastTested: editingConnector.lastTested,
+          schema: editingConnector.schema
+        });
+      }
+    }, [editingConnector]);
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState<any>(null);
 
@@ -69,23 +97,67 @@ export function RestApiConfigModal({ onBack, onConnect }: RestApiConfigModalProp
                                         <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Method</label>
                                         <select 
                                             value={config.method}
-                                            onChange={(e) => setConfig({...config, method: e.target.value})}
+                                            onChange={(e) => setConfig({...config, method: e.target.value as any})}
                                             className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-xl text-sm font-bold outline-none text-neutral-900 dark:text-white"
                                         >
-                                            <option>GET</option>
-                                            <option>POST</option>
+                                            <option value="GET">GET</option>
+                                            <option value="POST">POST</option>
                                         </select>
                                     </div>
                                     <div className="col-span-3 space-y-1.5">
                                         <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Endpoint URL</label>
                                         <input 
-                                            value={config.url}
-                                            onChange={(e) => setConfig({...config, url: e.target.value})}
+                                            value={config.baseUrl}
+                                            onChange={(e) => setConfig({...config, baseUrl: e.target.value})}
                                             className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white focus:ring-2 focus:ring-primary-600/20" 
                                             placeholder="https://api.example.com/v1/data"
                                         />
                                     </div>
                                 </div>
+                            </div>
+                        </section>
+
+                        <section className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">URL Parameters</h4>
+                                <button 
+                                    onClick={() => setConfig({...config, params: [...(config.params || []), { key: '', value: '' }]})}
+                                    className="p-1 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="space-y-2">
+                                {(config.params || []).map((h, i) => (
+                                    <div key={i} className="flex gap-2">
+                                        <input 
+                                            className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-lg text-xs font-medium outline-none text-neutral-900 dark:text-white" 
+                                            placeholder="Key" 
+                                            value={h.key}
+                                            onChange={(e) => {
+                                                const newParams = [...(config.params || [])];
+                                                newParams[i].key = e.target.value;
+                                                setConfig({...config, params: newParams});
+                                            }}
+                                        />
+                                        <input 
+                                            className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 rounded-lg text-xs font-medium outline-none text-neutral-900 dark:text-white" 
+                                            placeholder="Value" 
+                                            value={h.value}
+                                            onChange={(e) => {
+                                                const newParams = [...(config.params || [])];
+                                                newParams[i].value = e.target.value;
+                                                setConfig({...config, params: newParams});
+                                            }}
+                                        />
+                                        <button 
+                                            onClick={() => setConfig({...config, params: (config.params || []).filter((_, idx) => idx !== i)})}
+                                            className="p-2 text-neutral-400 hover:text-rose-600 transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
                         </section>
 
@@ -162,10 +234,22 @@ export function RestApiConfigModal({ onBack, onConnect }: RestApiConfigModalProp
                                 )}
 
                                 <button 
-                                    onClick={onConnect}
+                                    onClick={async () => {
+                                        if (editingConnector) {
+                                            await updateRestApiConnector(editingConnector.id, { ...config, status: 'active' });
+                                        } else {
+                                            await addRestApiConnector({
+                                                ...config,
+                                                id: `api_${Date.now()}`,
+                                                status: 'active'
+                                            } as any);
+                                        }
+                                        if (onConnect) onConnect();
+                                        onBack();
+                                    }}
                                     className="w-full py-4 bg-primary-600 text-white font-bold rounded-xl shadow-xl shadow-primary-200 hover:bg-primary-700 active:scale-95 transition-all flex items-center justify-center gap-2"
                                 >
-                                    <Save className="w-5 h-5" /> Save Connector
+                                    <Save className="w-5 h-5" /> {editingConnector ? 'Update Connector' : 'Save Connector'}
                                 </button>
                             </div>
                         </section>

@@ -22,7 +22,7 @@ const RELEASE_NOTES: ReleaseNote[] = [
       'Workflow Designer DnD: Enabled drag-and-drop orchestration for adding new stages to automation canvases.',
       'Send Email Action+: Added CC support and file attachment capability for data-driven automations.',
       'CSV Import Engine: New batch-processing modal supporting "Import to New Table" with auto-schema detection.',
-      'Trimble Connect integration: Full OAuth support and project synchronization view.',
+      'Trimble Connect integration: Full OAuth support and project synchronization view with dedicated SDK bridge example.',
       'Visual Consistency: Standardized dark/light mode tokens across all builder components.'
     ]
   },
@@ -30,11 +30,6 @@ const RELEASE_NOTES: ReleaseNote[] = [
     date: '2026-04-30',
     changes: [
       'Visual Refresh: Implemented ultra-clean Light Mode with a focus on white and soft grey scales (#F8FAFC).',
-    ]
-  },
-  {
-    date: '2026-04-30',
-    changes: [
       'Datasource Management: Replaced "Primary Datasource" dropdown with a new "Manage Application Datasources" portal that detects all linked tables.',
       'Input Logic: Fixed Toggle and Select components in Preview Mode to ensure form state updates correctly.',
       'Component Resilience: Improved sidebar and header responsiveness under new theme tokens.',
@@ -110,6 +105,18 @@ const USER_DOCS: UserDoc[] = [
     category: 'Data Studio',
     title: 'Advanced Calculated Fields',
     content: '1. In Data Studio, select a table and go to Schema View.\n2. Add a field and set type to "Calculated".\n3. Click "Edit Formula" to open the logic editor.\n4. You can write JavaScript logic or simple formulas. Access the current row data via the "row" object (e.g., row.price * row.quantity).\n5. Use aggregate functions like sum(allRecords, "price") for collection-level metrics.'
+  },
+  {
+    id: 'rest-api-config',
+    category: 'Integrations',
+    title: 'REST API Setup',
+    content: '1. Navigate to Data Studio > Sources.\n2. Click "Configure Connection" on REST API.\n3. Enter your endpoint URL and choose a method (GET/POST).\n4. Add any required headers or authentication tokens.\n5. Click "Test Connection" to verify. Once successful, data will be mapped to a virtual table.'
+  },
+  {
+    id: 'trimble-connect-sync',
+    category: 'Integrations',
+    title: 'Trimble Connect Sync',
+    content: '1. In Data Studio > Sources, select Trimble Connect.\n2. Sign in with your Trimble ID via the secure popup.\n3. Selected the projects you wish to synchronize.\n4. Choose a Sync Mode (Real-time or Manual batch).\n5. Click "Start Sync" to pull project metadata and issue tracking logs into your Project Workspace.'
   }
 ];
 
@@ -206,7 +213,7 @@ const DevSuiteTab = () => {
                     </div>
 
                     <div>
-                        <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-3 px-2">Deprecated</h4>
+                        <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-3 px-2">Depricated</h4>
                         <div className="space-y-1">
                             {DEPRECATED_EXAMPLES.map(doc => (
                                 <button 
@@ -229,7 +236,7 @@ const DevSuiteTab = () => {
                     <div className="flex items-center justify-between mb-2">
                         <h2 className="text-xl font-black text-neutral-900 dark:text-white uppercase tracking-tight">{selectedSnippet.title}</h2>
                         {DEPRECATED_EXAMPLES.find(d => d.id === selectedSnippet.id) && (
-                            <span className="px-2 py-0.5 bg-rose-50 text-rose-600 text-[10px] font-black rounded uppercase tracking-widest">Deprecated</span>
+                            <span className="px-2 py-0.5 bg-rose-50 text-rose-600 text-[10px] font-black rounded uppercase tracking-widest">Depricated</span>
                         )}
                     </div>
                     <p className="text-sm text-neutral-500 dark:text-slate-400 mb-6 font-medium">{selectedSnippet.description}</p>
@@ -334,6 +341,15 @@ try {
   limit(50)
 );
 const snap = await getDocs(q);`
+    },
+    {
+        id: 'trimble-api',
+        title: 'Trimble SDK Bridge',
+        description: 'Directly access Trimble Connect project data via the Nexus bridge.',
+        code: `// Access Trimble Projects via Internal Bridge
+const projects = await nexus.integrations.trimble.getProjects();
+console.log('Project Count:', projects.length);
+const model = await projects[0].getLatestModel();`
     }
 ];
 

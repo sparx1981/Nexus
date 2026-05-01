@@ -28,7 +28,8 @@ import {
     TrendingUp,
     Tag as TagIcon,
     Square,
-    Database
+    Database,
+    Globe
 } from 'lucide-react';
 import { 
     DndContext, 
@@ -98,6 +99,7 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
     const [toast, setToast] = useState<string | null>(null);
     const [currentAppData, setCurrentAppData] = useState<any>(null);
     const [formState, setFormState] = useState<Record<string, any>>({});
+    const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(true);
 
     const { selectedProjectId } = useAuthStore();
     const { 
@@ -111,14 +113,24 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         setCurrentAppId,
         undo,
         redo,
-        setComponents
+        setComponents,
+        moveComponent,
+        updateComponentSize
     } = useBuilderStore();
 
     useEffect(() => {
         if (onEditingAppChange) onEditingAppChange(currentAppId);
     }, [currentAppId, onEditingAppChange]);
 
-    const { tables } = useSchemaStore();
+    const { tables, restApiConnectors } = useSchemaStore();
+
+    // Unified Datasources helper
+    const unifiedDatasources = useMemo(() => {
+      return [
+        ...tables.map(t => ({ id: t.id, name: t.name, type: 'table' as const })),
+        ...restApiConnectors.map(c => ({ id: c.id, name: `${c.name} (API)`, type: 'api' as const }))
+      ];
+    }, [tables, restApiConnectors]);
 
     const sensors = useSensors(useSensor(PointerSensor, {
         activationConstraint: { distance: 5 }
@@ -136,8 +148,8 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
             if (c.properties.dataSource) ids.add(c.properties.dataSource);
         });
         if (currentAppData?.dataSourceId) ids.add(currentAppData.dataSourceId);
-        return Array.from(ids).map(id => tables.find(t => t.id === id)).filter(Boolean);
-    }, [components, currentAppData, tables]);
+        return Array.from(ids).map(id => unifiedDatasources.find(t => t.id === id)).filter(Boolean);
+    }, [components, currentAppData, unifiedDatasources]);
 
     const handleSave = async () => {
         if (!selectedProjectId || !currentAppId) return;
@@ -225,7 +237,9 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                     id: `${type}_${Math.random().toString(36).substr(2, 9)}`,
                     type,
                     label: data.label,
-                    properties: getDefaultProperties(type)
+                    properties: getDefaultProperties(type),
+                    position: { x: 20, y: 20 },
+                    size: { width: type === 'table' || type === 'bar_chart' ? 500 : 200, height: type === 'table' || type === 'bar_chart' ? 300 : 80 }
                 };
 
                 addComponent(newComponent);
@@ -332,8 +346,19 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                 </div>
 
                 {/* Right Properties Panel */}
-                <aside className="w-72 bg-white border-l border-neutral-200 flex flex-col shrink-0">
-                    <PropertiesPanel dataSourceId={currentAppData?.dataSourceId} />
+                <aside className={cn(
+                  "bg-white border-l border-neutral-200 flex flex-col shrink-0 transition-all duration-300 relative",
+                  propertiesPanelOpen ? "w-72" : "w-8"
+                )}>
+                    <button 
+                        onClick={() => setPropertiesPanelOpen(!propertiesPanelOpen)}
+                        className="absolute -left-3 top-4 w-6 h-6 bg-white border border-neutral-200 rounded-full flex items-center justify-center text-neutral-400 hover:text-primary-600 transition-colors z-20 shadow-sm"
+                    >
+                        {propertiesPanelOpen ? <ChevronRight className="w-3 h-3" /> : <Settings2 className="w-3 h-3" />}
+                    </button>
+                    {propertiesPanelOpen && (
+                      <PropertiesPanel dataSourceId={currentAppData?.dataSourceId} unifiedDatasources={unifiedDatasources} />
+                    )}
                 </aside>
             </div>
 
@@ -585,12 +610,15 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                                     <div key={table?.id} className="flex items-center justify-between p-4 bg-neutral-50 dark:bg-[#0F172A] rounded-2xl border border-neutral-100 dark:border-neutral-800 hover:border-primary-600 transition-all group">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E293B] shadow-sm flex items-center justify-center text-primary-600 border border-neutral-100 dark:border-neutral-800">
-                                                <Database className="w-5 h-5" />
+                                                {unifiedDatasources.find(t => t.id === table.id)?.type === 'api' ? <Globe className="w-5 h-5" /> : <Database className="w-5 h-5" />}
                                             </div>
                                             <div>
-                                                <div className="text-sm font-black text-neutral-900 dark:text-white">{table?.name}</div>
+                                                <div className="text-sm font-black text-neutral-900 dark:text-white">
+                                                    {table?.name}
+                                                    {unifiedDatasources.find(t => t.id === table.id)?.type === 'api' && <span className="ml-2 text-[8px] bg-primary-100 text-primary-600 p-0.5 rounded font-black uppercase tracking-tight">API</span>}
+                                                </div>
                                                 <div className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
-                                                    {table?.fields.length} Fields • {table?.id === currentAppData?.dataSourceId ? 'Primary Source' : (usedDatasources.some(u => u?.id === table.id) ? 'Linked Source' : 'Available Source')}
+                                                    {table?.fields?.length || 0} Fields • {table?.id === currentAppData?.dataSourceId ? 'Primary Source' : (usedDatasources.some(u => u?.id === table.id) ? 'Linked Source' : 'Available Source')}
                                                 </div>
                                             </div>
                                         </div>
@@ -659,16 +687,55 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
 }
 
 function Canvas({ viewMode }: { viewMode: string }) {
-    const { components, selectedId, selectComponent } = useBuilderStore();
+    const { components, selectedId, selectComponent, moveComponent, updateComponentSize } = useBuilderStore();
     const { isOver, setNodeRef } = useDroppable({
         id: 'canvas-dropzone'
     });
+
+    const [draggingId, setDraggingId] = useState<string | null>(null);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [initialPos, setInitialPos] = useState({ x: 0, y: 0 });
+
+    const [resizingId, setResizingId] = useState<string | null>(null);
+    const [initialSize, setInitialSize] = useState({ w: 0, h: 0 });
+
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+      if (draggingId) {
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        moveComponent(draggingId, initialPos.x + dx, initialPos.y + dy);
+      }
+      if (resizingId) {
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        updateComponentSize(resizingId, Math.max(50, initialSize.w + dx), Math.max(30, initialSize.h + dy));
+      }
+    }, [draggingId, resizingId, dragStart, initialPos, initialSize, moveComponent, updateComponentSize]);
+
+    const handleMouseUp = useCallback(() => {
+      setDraggingId(null);
+      setResizingId(null);
+    }, []);
+
+    useEffect(() => {
+      if (draggingId || resizingId) {
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+      } else {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      }
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }, [draggingId, resizingId, handleMouseMove, handleMouseUp]);
 
     return (
         <div 
             ref={setNodeRef}
             className={cn(
-                "bg-white dark:bg-slate-900 shadow-2xl transition-all duration-300 min-h-[600px] border relative p-8",
+                "bg-white dark:bg-slate-900 shadow-2xl transition-all duration-300 min-h-[800px] border relative p-8",
                 viewMode === 'desktop' && "w-full max-w-5xl",
                 viewMode === 'tablet' && "w-[768px]",
                 viewMode === 'mobile' && "w-[375px]",
@@ -680,7 +747,7 @@ function Canvas({ viewMode }: { viewMode: string }) {
         >
             {/* Canvas Header/Status Bar */}
             <div className="absolute -top-10 left-0 text-[10px] font-bold text-neutral-500 dark:text-slate-500 uppercase tracking-widest flex gap-4 items-center">
-                <span className="bg-neutral-200 dark:bg-slate-800 px-2 py-0.5 rounded text-neutral-700 dark:text-slate-300">Main Screen</span>
+                <span className="bg-neutral-200 dark:bg-slate-800 px-2 py-0.5 rounded text-neutral-700 dark:text-slate-300">Free Layout Canvas</span>
                 <span className="text-neutral-300 dark:text-slate-700">•</span>
                 <span>{components.length} Components</span>
             </div>
@@ -692,20 +759,34 @@ function Canvas({ viewMode }: { viewMode: string }) {
                              <Plus className="w-8 h-8 text-neutral-400 dark:text-slate-500" />
                          </div>
                          <p className="text-neutral-500 dark:text-slate-400 font-bold uppercase tracking-widest text-xs">Drop zone</p>
+                         <p className="text-[10px] text-neutral-400 mt-2">Drag components from the palette to start building</p>
                      </div>
                 </div>
             ) : (
-                <div className="space-y-4">
+                <div className="relative w-full h-full">
                     {components.map(c => (
                         <div 
                             key={c.id} 
-                            onClick={(e) => {
+                            style={{
+                              position: 'absolute',
+                              left: c.position?.x || 0,
+                              top: c.position?.y || 0,
+                              width: c.size?.width || 'auto',
+                              height: c.size?.height || 'auto',
+                              zIndex: selectedId === c.id ? 50 : 10
+                            }}
+                            onMouseDown={(e) => {
                                 e.stopPropagation();
                                 selectComponent(c.id);
+                                if ((e.target as HTMLElement).classList.contains('drag-handle')) {
+                                  setDraggingId(c.id);
+                                  setDragStart({ x: e.clientX, y: e.clientY });
+                                  setInitialPos({ x: c.position?.x || 0, y: c.position?.y || 0 });
+                                }
                             }}
                             className={cn(
-                                "relative group cursor-pointer transition-all rounded-md",
-                                selectedId === c.id ? "ring-2 ring-primary-600 ring-offset-4" : "hover:ring-2 hover:ring-neutral-200 hover:ring-offset-4"
+                                "group cursor-default transition-shadow rounded-md drag-handle",
+                                selectedId === c.id ? "ring-2 ring-primary-600 ring-offset-4 shadow-xl" : "hover:ring-2 hover:ring-neutral-200 hover:ring-offset-4"
                             )}
                         >
                             <RenderComponent component={c} />
@@ -717,13 +798,18 @@ function Canvas({ viewMode }: { viewMode: string }) {
                                 </div>
                             )}
 
-                            {/* Resize handles - Visual only as requested */}
+                            {/* Resize handles */}
                             {selectedId === c.id && (
                                 <>
-                                    <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-white border-2 border-primary-600 rounded-full cursor-nwse-resize z-10"></div>
-                                    <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-white border-2 border-primary-600 rounded-full cursor-nesw-resize z-10"></div>
-                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-white border-2 border-primary-600 rounded-full cursor-nesw-resize z-10"></div>
-                                    <div className="absolute -top-1 -left-1 w-3 h-3 bg-white border-2 border-primary-600 rounded-full cursor-nwse-resize z-10"></div>
+                                    <div 
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                        setResizingId(c.id);
+                                        setDragStart({ x: e.clientX, y: e.clientY });
+                                        setInitialSize({ w: c.size?.width || 200, h: c.size?.height || 80 });
+                                      }}
+                                      className="absolute -bottom-1 -right-1 w-3 h-3 bg-white border-2 border-primary-600 rounded-full cursor-nwse-resize z-10 hover:scale-125 transition-transform shadow-sm"
+                                    ></div>
                                 </>
                             )}
                         </div>
@@ -748,21 +834,21 @@ function RenderComponent({
     appContext?: any,
     key?: string
 }) {
-    const { type, properties } = component;
+    const { type, properties, size } = component;
     const { selectedProjectId } = useAuthStore();
 
     switch (type) {
         case 'heading':
             const HeadingTag = (properties.size || 'h1') as any;
             return <HeadingTag className={cn(
-                "font-bold text-neutral-900 dark:text-white tracking-tight",
+                "font-bold text-neutral-900 dark:text-white tracking-tight leading-tight",
                 properties.size === 'h1' && "text-4xl",
                 properties.size === 'h2' && "text-3xl",
                 properties.size === 'h3' && "text-2xl",
             )}>{properties.text || 'Heading'}</HeadingTag>;
         
         case 'text':
-            return <p className="text-neutral-600 dark:text-neutral-400 leading-relaxed">{properties.text || 'Paragraph text content...'}</p>;
+            return <p className="text-neutral-600 dark:text-neutral-400 leading-relaxed text-sm">{properties.text || 'Paragraph text content...'}</p>;
 
         case 'button':
             const handleClick = async () => {
@@ -836,14 +922,15 @@ function RenderComponent({
             return (
                 <button 
                     onClick={handleClick}
+                    style={{ width: '100%', height: '100%' }}
                     className={cn(
-                        "px-6 py-2.5 rounded-xl font-bold transition-all shadow-md active:scale-95",
+                        "rounded-xl font-bold transition-all shadow-md active:scale-95",
                         properties.style === 'primary' ? "bg-primary-600 text-white hover:bg-primary-700 shadow-primary-200" :
                         properties.style === 'secondary' ? "bg-white border-2 border-neutral-200 text-neutral-700 hover:bg-neutral-50 shadow-neutral-100 dark:bg-[#1A1A1A] dark:border-neutral-800 dark:text-neutral-300" :
                         "bg-error-600 text-white hover:bg-error-700 shadow-error-200"
                     )}
                 >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center gap-2">
                         {properties.label || 'Button'}
                         {!preview && properties.actionType && (
                             <span className="text-[8px] opacity-50 uppercase bg-black/10 px-1 rounded">{properties.actionType}</span>
@@ -857,9 +944,9 @@ function RenderComponent({
             const currentToggleVal = properties.fieldMapping && formState ? formState[properties.fieldMapping] : toggleOptions[0];
             
             return (
-                <div className="space-y-1.5 w-full">
+                <div className="space-y-1.5 w-full h-full">
                     <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300">{properties.label || 'Toggle'}</label>
-                    <div className="flex bg-neutral-100 dark:bg-[#1E293B] p-1 rounded-xl w-fit">
+                    <div className="flex bg-neutral-100 dark:bg-[#1E293B] p-1 rounded-xl w-full">
                         {toggleOptions.map((opt: string, idx: number) => (
                             <button
                                 key={idx}
@@ -870,7 +957,7 @@ function RenderComponent({
                                     }
                                 }}
                                 className={cn(
-                                    "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                                    "flex-1 py-1.5 text-xs font-bold rounded-lg transition-all",
                                     currentToggleVal === opt ? "bg-white dark:bg-[#334155] shadow-sm text-primary-600 dark:text-primary-400" : "text-neutral-400"
                                 )}
                             >
@@ -884,13 +971,13 @@ function RenderComponent({
         case 'select':
             const selectOptions = properties.options || [{ value: '1', label: 'Option 1' }];
             return (
-                <div className="space-y-1.5 w-full">
+                <div className="space-y-1.5 w-full h-full flex flex-col">
                     <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300">{properties.label || 'Dropdown'}</label>
-                    <div className="relative">
+                    <div className="relative flex-1">
                         <select 
                             value={properties.fieldMapping && formState ? formState[properties.fieldMapping] : ''}
                             onChange={(e) => preview && properties.fieldMapping && onFormUpdate?.(properties.fieldMapping, e.target.value)}
-                            className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none appearance-none dark:text-white"
+                            className="w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none appearance-none dark:text-white"
                             disabled={!preview}
                         >
                             <option value="">Select option...</option>
@@ -905,24 +992,19 @@ function RenderComponent({
 
         case 'input':
             return (
-                <div className="space-y-1.5 w-full">
+                <div className="space-y-1.5 w-full h-full flex flex-col">
                     <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 flex items-center justify-between gap-1">
                         <div className="flex items-center gap-1">
                             {properties.label || 'Input Label'}
                             {properties.required && <span className="text-error-500">*</span>}
                         </div>
-                        {properties.fieldMapping && (
-                            <span className="text-[9px] font-bold text-primary-600 bg-primary-50 dark:bg-primary-900/30 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                <Database className="w-2 h-2" /> {properties.fieldMapping}
-                            </span>
-                        )}
                     </label>
                     <input 
                         type="text" 
                         value={properties.fieldMapping && formState ? formState[properties.fieldMapping] : ''}
                         onChange={(e) => preview && properties.fieldMapping && onFormUpdate?.(properties.fieldMapping, e.target.value)}
                         placeholder={properties.placeholder || 'Enter value...'}
-                        className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none transition-all dark:text-white"
+                        className="w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none transition-all dark:text-white"
                         disabled={!preview}
                     />
                 </div>
@@ -930,64 +1012,65 @@ function RenderComponent({
 
         case 'container':
             return (
-                <div className="border-2 border-dashed border-neutral-200 rounded-xl p-8 bg-neutral-50/50 flex flex-col items-center justify-center text-center">
-                    <Square className="w-8 h-8 text-neutral-300 mb-2" />
-                    <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">{properties.label || 'Container'}</p>
+                <div className="w-full h-full border-2 border-dashed border-neutral-200 rounded-xl bg-neutral-50/50 flex flex-col items-center justify-center text-center p-4">
+                    <Square className="w-8 h-8 text-neutral-200 mb-2" />
+                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest leading-none">{properties.label || 'Container'}</p>
                 </div>
             );
 
         case 'section':
             return (
-                <div className="border-t-2 border-b-2 border-neutral-100 py-12 px-8 flex flex-col items-center justify-center text-center bg-white">
-                     <Layers className="w-8 h-8 text-neutral-300 mb-2" />
-                     <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Section Wrapper</p>
+                <div className="w-full h-full border-2 border-neutral-100 rounded-xl flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900 border-dashed">
+                     <Layers className="w-8 h-8 text-neutral-200 mb-2" />
+                     <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Section</p>
                 </div>
             );
 
         case 'table':
             return (
-                <div className="w-full bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden shadow-sm">
-                    <div className="bg-neutral-50 dark:bg-[#1A1A1A] border-b border-neutral-200 dark:border-neutral-800 px-4 py-3 flex items-center justify-between">
-                        <span className="text-sm font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-2">
-                            <Database className="w-4 h-4 text-primary-600" />
-                            {properties.dataSource || 'No Data Source Connected'}
+                <div className="w-full h-full bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                    <div className="bg-neutral-50 dark:bg-[#1A1A1A] border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 flex items-center justify-between shrink-0">
+                        <span className="text-[10px] font-black uppercase text-neutral-500 flex items-center gap-2">
+                            <Database className="w-3 h-3 text-primary-600" />
+                            {properties.dataSource || 'No Data Source'}
                         </span>
-                        <TableIcon className="w-4 h-4 text-neutral-400" />
                     </div>
-                    <table className="w-full text-sm">
-                        <thead className="bg-neutral-50/50 dark:bg-[#1A1A1A]/50">
-                            <tr>
-                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Field A</th>
-                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Field B</th>
-                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Field C</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium">
-                            {[1, 2, 3].map(i => (
-                                <tr key={i}>
-                                    <td className="px-4 py-3 text-neutral-400 dark:text-neutral-500 italic">Connected to {properties.dataSource || '...'}</td>
-                                    <td className="px-4 py-3 text-neutral-400 dark:text-neutral-500 italic">...</td>
-                                    <td className="px-4 py-3 text-neutral-400 dark:text-neutral-500 italic">...</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <div className="flex-1 overflow-auto">
+                      <table className="w-full text-[11px]">
+                          <thead className="bg-neutral-50/50 dark:bg-[#1A1A1A]/50 sticky top-0">
+                              <tr>
+                                  <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase tracking-wider">Field A</th>
+                                  <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase tracking-wider">Field B</th>
+                              </tr>
+                          </thead>
+                          <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium">
+                              {[1, 2, 3, 4, 5].map(i => (
+                                  <tr key={i}>
+                                      <td className="px-4 py-2 text-neutral-400 dark:text-neutral-500 italic">Data Row {i}</td>
+                                      <td className="px-4 py-2 text-neutral-400 dark:text-neutral-500 italic">...</td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                    </div>
                 </div>
             );
 
         case 'bar_chart':
             return (
-                <div className="w-full h-48 bg-white border border-neutral-200 rounded-xl p-4 shadow-sm">
-                     <h4 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-4">Sample Data Chart</h4>
-                     <ResponsiveContainer width="100%" height="80%">
-                        <RechartsBarChart data={CHART_DATA}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                            <XAxis dataKey="name" hide />
-                            <YAxis hide />
-                            <Tooltip cursor={{ fill: '#F3F4F6' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                            <Bar dataKey="value" fill="#1A56DB" radius={[4, 4, 0, 0]} barSize={20} />
-                        </RechartsBarChart>
-                     </ResponsiveContainer>
+                <div className="w-full h-full bg-white dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm flex flex-col">
+                     <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-4 shrink-0">Analytics Preview</h4>
+                     <div className="flex-1 min-h-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <RechartsBarChart data={CHART_DATA}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                              <XAxis dataKey="name" hide />
+                              <YAxis hide />
+                              <Tooltip cursor={{ fill: '#F3F4F6' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                              <Bar dataKey="value" fill="#1A56DB" radius={[4, 4, 0, 0]} barSize={15} />
+                          </RechartsBarChart>
+                      </ResponsiveContainer>
+                     </div>
                 </div>
             );
 
@@ -1000,9 +1083,9 @@ function RenderComponent({
     }
 }
 
-function PropertiesPanel({ dataSourceId }: { dataSourceId?: string }) {
+function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: string, unifiedDatasources: any[] }) {
     const { selectedId, components, updateComponent, deleteComponent, currentAppId } = useBuilderStore();
-    const { tables } = useSchemaStore();
+    const { tables, restApiConnectors } = useSchemaStore();
     const { selectedProjectId } = useAuthStore();
     const [allApps, setAllApps] = useState<any[]>([]);
     
@@ -1018,8 +1101,24 @@ function PropertiesPanel({ dataSourceId }: { dataSourceId?: string }) {
     }, [selectedProjectId]);
 
     const selectedComponent = components.find(c => c.id === selectedId);
-    const connectedTable = tables.find(t => t.id === dataSourceId);
-    const availableFields = connectedTable?.fields || [];
+    
+    // Support for both table fields and API schema
+    const availableFields = useMemo(() => {
+      if (!dataSourceId) return [];
+      const table = tables.find(t => t.id === dataSourceId);
+      if (table) return table.fields;
+      
+      const api = restApiConnectors.find(c => c.id === dataSourceId);
+      if (api && api.schema) {
+        try {
+            const schemaObj = typeof api.schema === 'string' ? JSON.parse(api.schema) : api.schema;
+            return schemaObj.fields || [];
+        } catch (e) {
+            return [];
+        }
+      }
+      return [];
+    }, [dataSourceId, tables, restApiConnectors]);
 
     if (!selectedComponent) {
         return (
@@ -1028,12 +1127,12 @@ function PropertiesPanel({ dataSourceId }: { dataSourceId?: string }) {
                     <h3 className="font-bold text-neutral-900 text-sm">Properties</h3>
                     <Settings2 className="w-4 h-4 text-neutral-400" />
                 </div>
-                <div className="flex-1 flex items-center justify-center p-8 text-center">
+                <div className="flex-1 flex items-center justify-center p-8 text-center bg-neutral-50/30">
                     <div>
-                        <div className="inline-flex p-3 bg-neutral-50 rounded-full mb-4">
+                        <div className="inline-flex p-3 bg-white border border-neutral-100 rounded-2xl shadow-sm mb-4">
                             <MousePointer2 className="w-6 h-6 text-neutral-300" />
                         </div>
-                        <p className="text-xs text-neutral-500 px-4">Select an element on the canvas to edit its properties and data bindings.</p>
+                        <p className="text-[11px] font-medium text-neutral-400 px-4 leading-relaxed">Select an element on the canvas to configure its layout, data bindings, and interaction rules.</p>
                     </div>
                 </div>
             </div>
@@ -1137,7 +1236,7 @@ function PropertiesPanel({ dataSourceId }: { dataSourceId?: string }) {
                                      ))}
                                  </select>
                                  <p className="text-[9px] text-primary-400 font-medium italic">
-                                     {dataSourceId ? `Connected to ${connectedTable?.name}` : 'No datasource connected to this app'}
+                                     {dataSourceId ? `Connected to ${unifiedDatasources.find(s => s.id === dataSourceId)?.name || 'Source'}` : 'No datasource connected to this app'}
                                  </p>
                              </div>
                          </div>

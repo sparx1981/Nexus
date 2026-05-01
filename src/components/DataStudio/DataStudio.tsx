@@ -35,7 +35,7 @@ import { db } from '../../lib/firebase';
 import { collection, query, onSnapshot, getDocs, where, limit, orderBy } from 'firebase/firestore';
 import Papa from 'papaparse';
 import axios from 'axios';
-import { FieldType } from '../../types';
+import { FieldType, RestApiConnector } from '../../types';
 
 
 import { handleFirestoreError, OperationType } from '../../services/dataService';
@@ -110,7 +110,7 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
   const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
-    if (selectedTableId) {
+    if (selectedTableId && activeSubTab === 'sources') {
       setActiveSubTab('table');
     }
   }, [selectedTableId]);
@@ -170,7 +170,7 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
         {activeSubTab === 'schema' && <SchemaView />}
         {activeSubTab === 'table' && <DataTableView />}
         {activeSubTab === 'query' && <QueryBuilderView />}
-        {activeSubTab === 'sources' && <SourcesView />}
+        {activeSubTab === 'sources' && <SourcesView onNavigate={(tab) => setActiveSubTab(tab)} />}
       </div>
 
       {showCSVImport && <CSVImportModal onFinish={() => setShowCSVImport(false)} onCancel={() => setShowCSVImport(false)} />}
@@ -636,11 +636,18 @@ function DataTableView() {
                                         onChange={(e) => setNewField({...newField, type: e.target.value as FieldType})}
                                         className="w-full px-3 py-2 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none dark:text-white"
                                     >
-                                        {Object.values(FieldType).map(type => (
-                                            <option key={type} value={type}>{type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+                                        {[
+                                            { value: FieldType.TEXT, label: 'Short Text' },
+                                            { value: FieldType.LONG_TEXT, label: 'Long Text / Description' },
+                                            { value: FieldType.NUMBER, label: 'Number (Integer/Decimal)' },
+                                            { value: FieldType.DATE, label: 'Date / Calendar' },
+                                            { value: FieldType.SINGLE_SELECT, label: 'Select (Options)' },
+                                            { value: FieldType.BOOLEAN, label: 'Checkbox (Boolean)' },
+                                            { value: FieldType.FORMULA, label: 'Formula (Calculated)' },
+                                            { value: FieldType.RELATION, label: 'Relationship (Linked Record)' },
+                                        ].map(opt => (
+                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
                                         ))}
-                                        <option value="enum">Select (Enum)</option>
-                                        <option value="formula">Formula (Excel-like)</option>
                                     </select>
                                 </div>
                                 <div className="space-y-1.5">
@@ -692,19 +699,7 @@ function DataTableView() {
                                 </div>
                             )}
 
-                            {newField.type === ('enum' as any) && (
-                                <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
-                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Options (Comma separated)</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="e.g. Active, Pending, Resolved"
-                                        onChange={(e) => (newField as any).options = e.target.value.split(',').map((s: string) => s.trim())}
-                                        className="w-full px-3 py-2 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none dark:text-white"
-                                    />
-                                </div>
-                            )}
-
-                            {newField.type === ('formula' as any) && (
+                            {newField.type === FieldType.FORMULA && (
                                 <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
                                     <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Formula Expression</label>
                                     <input 
@@ -787,7 +782,7 @@ function DataTableView() {
                                     </button>
                                 </td>
                                 {table?.fields.map(f => {
-                                    const isCalculated = f.type === FieldType.CALCULATED || f.type === ('formula' as any);
+                                    const isCalculated = f.type === FieldType.CALCULATED || f.type === FieldType.FORMULA;
                                     const val = isCalculated ? evaluateExpression((f as any).formula || f.calculatedExpression || '', row, records) : row[f.name] || '';
                                     
                                     return (
@@ -822,6 +817,7 @@ function QueryBuilderView() {
     const [filters, setFilters] = useState([{ field: '', operator: '==', value: '' }]);
     const [results, setResults] = useState<any[]>([]);
     const [running, setRunning] = useState(false);
+    const [rowLimit, setRowLimit] = useState(25);
 
     const handleRunQuery = async () => {
         if (!selectedProjectId || !selectedTable) return;
@@ -837,7 +833,7 @@ function QueryBuilderView() {
             const q = query(
                 collection(db, 'workspaces', selectedProjectId, 'tableData', selectedTable, 'rows'),
                 ...constraints,
-                limit(100)
+                limit(rowLimit)
             );
 
             const snap = await getDocs(q);
@@ -974,7 +970,18 @@ function QueryBuilderView() {
                                     <Download className="w-3 h-3" /> Export CSV
                                 </button>
                             </div>
-                            <span className="text-xs font-bold text-neutral-400 uppercase">{results.length} Rows</span>
+                    <div className="flex items-center gap-2">
+                        <select
+                            value={rowLimit}
+                            onChange={(e) => setRowLimit(Number(e.target.value))}
+                            className="text-[10px] font-black uppercase bg-neutral-100 dark:bg-slate-800 border-none rounded-lg px-2 py-1 outline-none text-neutral-500"
+                        >
+                            <option value={25}>25 rows</option>
+                            <option value={50}>50 rows</option>
+                            <option value={100}>100 rows</option>
+                        </select>
+                        <span className="text-xs font-bold text-neutral-400 uppercase">{results.length} Rows</span>
+                    </div>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -1011,28 +1018,35 @@ function QueryBuilderView() {
     );
 }
 
-function SourcesView() {
-    const [connectors, setConnectors] = useState([
-        { id: 'internal', name: 'Internal Tables', type: 'system', status: 'connected', icon: <Database className="w-6 h-6" /> },
-        { id: 'rest_api', name: 'REST API', type: 'api', status: 'disconnected', icon: <Globe className="w-6 h-6" /> },
-        { id: 'trimble', name: 'Trimble Connect', type: 'external', status: 'disconnected', icon: <Box className="w-6 h-6" /> },
-    ]);
+function SourcesView({ onNavigate }: { onNavigate?: (tab: any) => void }) {
+    const { restApiConnectors, deleteRestApiConnector } = useSchemaStore();
+    const { selectedProjectId } = useAuthStore();
     const [view, setView] = useState<'list' | 'api' | 'trimble'>('list');
+    const [editingConnector, setEditingConnector] = useState<RestApiConnector | null>(null);
 
-    if (view === 'api') return <RestApiConfigModal onBack={() => setView('list')} onConnect={() => {
-        setConnectors(connectors.map(c => c.id === 'rest_api' ? { ...c, status: 'connected' } : c));
-        setView('list');
-    }} />;
+    const connectors = [
+        { id: 'internal', name: 'Internal Tables', type: 'system', status: 'connected', icon: <Database className="w-6 h-6" />, description: 'Manage local database tables and structures.' },
+        { id: 'rest_api', name: 'REST API', type: 'api', status: restApiConnectors.length > 0 ? 'connected' : 'disconnected', icon: <Globe className="w-6 h-6" />, description: 'Connect to external JSON APIs for dynamic data.' },
+        { id: 'trimble', name: 'Trimble Connect', type: 'external', status: 'disconnected', icon: <Box className="w-6 h-6" />, description: 'Sync 3D models and project data from Trimble.' },
+    ];
+
+    if (view === 'api') return (
+        <RestApiConfigModal 
+            onBack={() => { setView('list'); setEditingConnector(null); }} 
+            editingConnector={editingConnector}
+        />
+    );
     
     if (view === 'trimble') return <TrimbleConnectView onBack={() => setView('list')} onConnect={() => {
-        setConnectors(connectors.map(c => c.id === 'trimble' ? { ...c, status: 'connected' } : c));
         setView('list');
     }} />;
 
     return (
-        <div className="p-8 max-w-5xl mx-auto">
-            <h3 className="text-2xl font-bold text-neutral-900 mb-2 dark:text-white">Data Sources</h3>
-            <p className="text-neutral-500 mb-8 dark:text-neutral-400 font-medium">Manage your workspace's connection to external and internal data origins.</p>
+        <div className="p-8 max-w-6xl mx-auto space-y-12">
+            <header>
+                <h3 className="text-2xl font-bold text-neutral-900 mb-2 dark:text-white">Data Sources</h3>
+                <p className="text-neutral-500 mb-8 dark:text-neutral-400 font-medium text-sm">Manage your workspace's connection to external and internal data origins.</p>
+            </header>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {connectors.map(c => (
@@ -1049,26 +1063,71 @@ function SourcesView() {
                             </div>
                         </div>
                         <h4 className="font-bold text-neutral-900 dark:text-white mb-2">{c.name}</h4>
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-6 leading-relaxed">Connect and sync data from {c.name} directly into your Nexus applications.</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-6 leading-relaxed">{c.description}</p>
                         
                         <button 
-                            disabled={c.status === 'connected'}
                             onClick={() => {
-                                if (c.id === 'rest_api') setView('api');
+                                if (c.id === 'internal' && onNavigate) onNavigate('table');
+                                else if (c.id === 'rest_api') setView('api');
                                 else if (c.id === 'trimble') setView('trimble');
                             }}
                             className={cn(
                                 "w-full py-2.5 rounded-xl text-xs font-bold transition-all",
-                                c.status === 'connected' 
+                                (c.status === 'connected' && c.id === 'trimble')
                                     ? "bg-neutral-50 text-neutral-400 cursor-default dark:bg-neutral-800" 
                                     : "bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-100 active:scale-95"
                             )}
                         >
-                            {c.status === 'connected' ? 'Connected' : 'Configure Connection'}
+                            {c.id === 'internal' ? 'View Tables' : (c.id === 'rest_api' && restApiConnectors.length > 0 ? '+ Add Another API' : 'Configure Connection')}
                         </button>
                     </div>
                 ))}
             </div>
+
+            {restApiConnectors.length > 0 && (
+              <section className="space-y-6 pt-8 border-t border-neutral-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-black uppercase tracking-widest text-neutral-400">Active REST Connections</h4>
+                  <span className="text-xs font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded-lg">{restApiConnectors.length} Connections</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {restApiConnectors.map(connector => (
+                    <div key={connector.id} className="bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-2xl p-5 flex items-center justify-between group/card hover:border-primary-600 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/20 text-primary-600 flex items-center justify-center">
+                          <Globe className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h5 className="font-bold text-sm text-neutral-900 dark:text-white">{connector.name}</h5>
+                          <p className="text-[10px] font-mono text-neutral-400 truncate max-w-[200px]">{connector.baseUrl}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => {
+                            setEditingConnector(connector);
+                            setView('api');
+                          }}
+                          className="p-2 hover:bg-neutral-100 dark:hover:bg-slate-800 text-neutral-400 hover:text-primary-600 rounded-lg transition-all"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={async () => {
+                            if (confirm('Are you sure you want to delete this connection?') && selectedProjectId) {
+                              await deleteRestApiConnector(connector.id);
+                            }
+                          }}
+                          className="p-2 hover:bg-rose-50 dark:hover:bg-rose-900/20 text-neutral-300 hover:text-rose-600 rounded-lg transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
         </div>
     );
 }
