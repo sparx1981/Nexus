@@ -28,16 +28,23 @@ export enum FieldType {
   PHONE = 'phone',
   JSON = 'json',
   AUTO_NUMBER = 'auto_number',
+  CALCULATED = 'calculated',
 }
 
 export interface Field {
   id: string;
   name: string;
   type: FieldType;
+  description?: string;
+  size?: number;
+  precision?: number;
+  scale?: number;
+  dateFormat?: string;
   required?: boolean;
   options?: string[]; // For selects
   formula?: string;
   relationTarget?: string; // Table ID
+  calculatedExpression?: string;
 }
 
 export interface User {
@@ -53,6 +60,7 @@ export interface Table {
   name: string;
   description?: string;
   fields: Field[];
+  type?: 'internal' | 'csv' | 'api' | 'trimble';
 }
 
 export interface Relationship {
@@ -62,10 +70,20 @@ export interface Relationship {
   type: 'one-to-one' | 'one-to-many' | 'many-to-many';
 }
 
+export enum ApplicationMode {
+  VIEW_ONLY = 'view_only',
+  ADD = 'add',
+  UPDATE = 'update',
+  DELETE = 'delete'
+}
+
 export interface AppConfig {
   id: string;
   name: string;
   description?: string;
+  dataSourceId?: string;
+  mode: ApplicationMode;
+  keyFields: string[]; // Field IDs
   screens: ScreenConfig[];
 }
 

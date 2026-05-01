@@ -2,11 +2,22 @@
 
 @theme {
   --color-primary-50: #EFF6FF;
+  --color-primary-100: #DBEAFE;
   --color-primary-600: #1A56DB;
+  --color-primary-700: #1D4ED8;
+  --color-primary-900: #1E3A8A;
+  
+  --color-neutral-50: #F9FAFB;
   --color-neutral-100: #F3F4F6;
+  --color-neutral-200: #E5E7EB;
+  --color-neutral-300: #D1D5DB;
   --color-neutral-400: #9CA3AF;
-  --color-neutral-600: #374151;
+  --color-neutral-500: #6B7280;
+  --color-neutral-600: #4B5563;
+  --color-neutral-700: #374151;
+  --color-neutral-800: #1F2937;
   --color-neutral-900: #111827;
+  
   --color-success-600: #059669;
   --color-warning-500: #D97706;
   --color-error-600: #DC2626;
@@ -15,28 +26,48 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+:root {
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8FAFC;
+  --border: #E2E8F0;
+  --text-primary: #0F172A;
+  --text-secondary: #475569;
+}
+
+.dark {
+  --bg-primary: #0F172A;
+  --bg-secondary: #1E293B;
+  --border: #334155;
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+}
+
 @layer base {
+  html {
+    @apply antialiased;
+  }
+  
   body {
-    @apply font-sans text-neutral-900 bg-neutral-100;
+    @apply font-sans text-neutral-900 bg-white dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300;
   }
   
   h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold tracking-tight;
+    @apply font-bold tracking-tight;
   }
 }
 
 .markdown-body {
-  @apply text-neutral-600 leading-relaxed;
+  @apply text-neutral-600 dark:text-slate-400 leading-relaxed;
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-neutral-100;
+  @apply bg-transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-neutral-400 rounded-full hover:bg-neutral-600 transition-colors;
+  @apply bg-neutral-200 dark:bg-slate-800 rounded-full hover:bg-neutral-300 dark:hover:bg-slate-700 transition-colors;
 }

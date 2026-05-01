@@ -1,64 +1,98 @@
 # Nexus Product Specification
 
-> **Last Updated:** 2026-04-30 | **Changed:** Finalized full platform feature set including Interactive Dashboards, AI Chat, Trimble Connect, and Workflow Designer.
+> **Last Updated:** 2026-05-01 | **Changed:** Fixed critical Firestore `permission-denied` errors by refactoring security rules logic and user query permissions. Decoupled workspace architecture to support multi-tenant projects via `selectedProjectId`. Standardized record path pattern to `workspaces/{workspaceId}/tableData/{tableId}/rows`.
 
-## 1. Executive Summary
-Nexus is a cloud-native low-code platform. It enables the creation of data-driven business applications with a focus on AI-first development and modern data connectivity.
+## 1. Product Concept
+Nexus is a browser-based architectural and business modeling workspace that bridges the gap between structured data and custom business applications. It allows users to design schemas, orchestrate logic via workflows, and build polished UIs with deep data integration.
 
 ## 2. Architecture Overview
 - **Frontend**: React 18 SPA with Vite and Tailwind CSS.
 - **State Management**: Zustand for editor state and auth.
-- **AI**: Gemini 1.5 Flash via `@google/generative-ai` for specialized chat and scaffold generation.
-- **Design System**: Nexus Design Language (NDL) based on Inter (sans).
+- **Backend/Database**: Firebase Firestore for real-time data persistence.
+- **Workspace Architecture**: Multi-tenant workspace model. All project resources are centralized under `workspaces/{workspaceId}`. The active `workspaceId` is dynamically managed via the `selectedProjectId` in `authStore`.
+- **Theming**: Integrated Light and Dark mode with professional grey scales (#F8FAFC, #F1F5F9).
+- **Data Layer**: Centralized `collections.ts` defines dynamic Firestore path factories. `dataService.ts` handles granular record operations with mandatory `workspaceId` injection.
+- **Error Handling**: Standardized `handleFirestoreError` in `dataService.ts` for consistent debugging and permission analysis.
+- **Authentication**: Firebase Authentication with support for Trimble Connect OAuth (token-based).
+- **AI**: Gemini 1.5 Flash via `@google/generative-ai`.
 
-## 3. Module Specifications
+## 3. Data Infrastructure
+Nexus uses a standardized workspace-centric Firestore structure:
+
+### `/workspaces/{workspaceId}`
+The root container for all workspace resources.
+- `id`: string (doc ID)
+- `name`: string
+- `ownerId`: string
+- `memberships`: Array<{ email: string, role: 'admin' | 'member', status: 'active' | 'pending', invitedAt: string }>
+
+#### `/workspaces/{workspaceId}/tables`
+Collection defining the data models (entities).
+- `id`: string (doc ID)
+- `name`: string
+- `fields`: Field[]
+- `position`: { x: number, y: number }
+
+#### `/workspaces/{workspaceId}/tableData/{tableId}/rows`
+The actual data entries for each table. Fields are dynamic based on the table's schema.
+
+#### `/workspaces/{workspaceId}/dashboards`
+Configurations for analytical views.
+- `id`: string
+- `name`: string
+- `cards`: DashboardCard[]
+
+#### `/workspaces/{workspaceId}/reports`
+Configurations for document-based data exports and audits.
+- `id`: string
+- `elements`: ReportElement[]
+
+## 4. Module Specifications
+
+### Applications (App Builder)
+- **Multi-App Management**: Complete listing view with Create, Edit, and Delete functionality.
+- **Persistence**: Real-time cloud sync using workspace paths.
 
 ### Data Studio
-- **Schema View**: React Flow canvas. Add tables/fields. Handle E-R mapping.
-- **Table View**: Inline editable spreadsheet for raw data management.
-- **Query Builder**: Visual filter/sort logic for data extraction.
-- **Sources**: Connector management for internal and external (Snowflake/BigQuery) data.
+- **Schema View**: React Flow canvas with node-based table management. Supports context menus for table operations.
+- **Calculated Fields Engine**: 
+    - **Editor**: Supports basic formula builder and advanced JavaScript code input.
+    - **Runtime**: Context-aware evaluation engine with access to `row`, `allRecords`, `sum()`, `avg()`, and `Math` functions. Use of `new Function` for performant runtime calculation.
+- **Table View**: Real-time record editing with Firestore `onSnapshot` integration.
 
 ### Workflows (Visual Designer)
-- **Palette**: Triggers (Record Created/Updated), Actions (Send Email, API Call), Logic (Condition).
-- **Canvas**: Drag-and-drop React Flow workspace.
-- **Properties**: Context-aware configuration panel for selected nodes.
+- **Palette**: Triggers and Actions for business logic orchestration.
 
-### Reports Engine
-- **Report Selector**: Switch between Revenue, Inventory, and Compliance reports.
-- **Interactions**: Client-side Search, Status Filtering, Multi-column Sorting.
-- **Exports**: Live CSV generation; simulated Excel/PDF downloads with progress feedback.
+### Interactive Dashboards (Insight)
+- **Dashboard Designer**: High-fidelity drag-and-drop workspace for widget configuration.
+- **Data Connectivity**: Real-time binding to workspace tables. Select specific fields for Dimensions (X) and Measures (Y).
 
-### Interactive Dashboards
-- **KPI Tiles**: Real-time metric cards with trend micro-charts.
-- **Cross-Dashboard Switching**: Toggle between Sales Performance and Operations Overview.
-- **Visuals**: Responsive Bar/Line/Pie charts using Recharts with hover tooltips and segment drilling.
+### Reports & Audits
+- **Report Designer**: Document-centric editor for creating A4 data snapshots.
+- **Elements**: Supports Text, Table, Chart, and Image components.
 
-### Trimble Connect Integration
-- **Project Selection**: Switch context between different AEC projects.
-- **BCF Coordination**: Live sync of coordination topics (Issues) with priority status.
-- **Field Mapping**: Logic to map Trimble metadata directly to Nexus application entities.
+## 5. File Structure
+- `src/App.tsx`: Main Studio shell with sidebar navigation and sync initializers.
+- `src/lib/collections.ts`: Central source of truth for Firestore paths.
+- `src/store/dashboardStore.ts`: Persistent state for widget-based dashboards.
+- `src/store/reportStore.ts`: Persistent state for document-based reports.
+- `src/store/schemaStore.ts`: Management of tables, fields, and relationships.
+- `src/hooks/useSyncData.ts`: Global listener for workspace tables.
 
-### AI Developer Assistant
-- **Schema Awareness**: AI reads `tables` state to provide contextual build advice.
-- **Chat**: Persistent side panel with message history and typing indicators.
-
-## 4. File Structure
-- `src/App.tsx`: Main Studio shell, global search, and notification system.
-- `src/store/schemaStore.ts`: Primary state for data models and node positioning.
-- `src/components/Workflows/WorkflowDesigner.tsx`: The workflow orchestration canvas.
-- `src/components/Reports/ReportViewer.tsx`: Data-dense tabular reporting.
-- `src/components/Dashboards/SalesDashboard.tsx`: High-density visualization suite.
-- `src/components/Integrations/TrimbleConnectView.tsx`: Trimble Connect project interface.
-- `src/services/geminiService.ts`: AI orchestration layer.
-
-## 5. Data Models
+## 6. Data Models
 ```typescript
 export interface Table {
   id: string;
   name: string;
+  description?: string;
   fields: Field[];
-  position?: { x: number; y: number };
+}
+
+export interface Field {
+  id: string;
+  name: string;
+  type: FieldType;
+  calculatedExpression?: string; // For CALCULATED type
 }
 
 export enum FieldType {
@@ -66,19 +100,19 @@ export enum FieldType {
   NUMBER = 'number',
   BOOLEAN = 'boolean',
   DATE = 'date',
-  RELATION = 'relation',
-  AUTO_NUMBER = 'auto_number',
-  EMAIL = 'email',
-  URL = 'url'
+  CALCULATED = 'calculated',
+  RELATION = 'relation'
+}
+
+export interface DashboardCard {
+  id: string;
+  type: 'kpi' | 'bar' | 'line' | 'pie' | 'table';
+  dataSourceId: string;
+  config: any;
 }
 ```
 
-## 6. Keyboard Shortcuts
-- `Enter`: Submit text in AI Assistant.
-- `Click + Drag`: Reposition tables in Schema or nodes in Workflows.
-- `Search Input (Header)`: Jump to any module or resource.
-
 ## 7. Build and Deployment
-- Developed as a Vite SPA.
-- Port 3000 requirement for AI Studio environment.
-- Environment variables required for Gemini API.
+- Standard React/Vite SPA.
+- Firebase integration requires `firebase-applet-config.json`.
+- Production build targets `dist/` directory.

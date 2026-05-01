@@ -23,9 +23,14 @@ export async function generateAppScaffold(prompt: string, schemaContext: string)
         const result = await model.generateContent(fullPrompt);
         const response = await result.response;
         return response.text();
-    } catch (error) {
+    } catch (error: any) {
         console.error("AI Generation Error:", error);
-        throw error;
+        
+        if (error.message?.includes('429')) {
+          throw new Error('AI Generation rate limit reached. Please wait 60 seconds.');
+        }
+        
+        throw new Error('AI App Scaffolding failed. Please check your prompt or try again.');
     }
 }
 
@@ -55,11 +60,25 @@ export async function getChatResponse(messages: { role: 'user' | 'assistant', co
     `;
 
     const lastMessage = messages[messages.length - 1].content;
-    const result = await chat.sendMessage([
-        { text: systemContext },
-        { text: lastMessage }
-    ]);
-    
-    const response = await result.response;
-    return response.text();
+    try {
+        const result = await chat.sendMessage([
+            { text: systemContext },
+            { text: lastMessage }
+        ]);
+        
+        const response = await result.response;
+        return response.text();
+    } catch (error: any) {
+        console.error("AI Assistant Error:", error);
+        
+        if (error.message?.includes('429') || error.message?.includes('finishReason: RECITATION')) {
+            throw new Error('Rate exceeded for AI Assistant. Please wait a moment and try again.');
+        }
+        
+        if (error.message?.includes('finishReason: SAFETY')) {
+            throw new Error('I apologize, but I cannot process that request due to safety guidelines.');
+        }
+
+        throw new Error('AI Assistant is temporarily unavailable. Please try again later.');
+    }
 }

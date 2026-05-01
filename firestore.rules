@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // GLOBAL HELPERS
+    // -------------------------------------------------------------------------
+    function isSignedIn() { return request.auth != null; }
+    function email() { return request.auth.token.email; }
+    function isVerified() { return request.auth.token.email_verified == true; }
+    function isAdminUser() {
+      return isSignedIn() && email() == 'craigtrickett@gmail.com';
+    }
+
+    function isMember(wsId) {
+      return isSignedIn() && (
+        isAdminUser() || 
+        (exists(/databases/$(database)/documents/workspaces/$(wsId)) && (
+          get(/databases/$(database)/documents/workspaces/$(wsId)).data.ownerId == request.auth.uid || 
+          get(/databases/$(database)/documents/workspaces/$(wsId)).data.ownerId == 'system' ||
+          (isVerified() && get(/databases/$(database)/documents/workspaces/$(wsId)).data.get('memberships', []).exists(m, m.email == email()))
+        ))
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // DEFAULT DENY
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // USERS
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdminUser());
+      allow list: if isSignedIn() && (resource.data.id == request.auth.uid || isAdminUser());
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // -------------------------------------------------------------------------
+    // WORKSPACES
+    // -------------------------------------------------------------------------
+    match /workspaces/{workspaceId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isMember(workspaceId);
+
+      match /{allSubcollections=**} {
+        allow read, write: if isMember(workspaceId);
+      }
+    }
+  }
+}

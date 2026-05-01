@@ -4,6 +4,7 @@ import { ComponentConfig } from '../types';
 interface BuilderState {
   components: ComponentConfig[];
   selectedId: string | null;
+  currentAppId: string | null;
   history: ComponentConfig[][];
   historyIndex: number;
   
@@ -15,14 +16,18 @@ interface BuilderState {
   undo: () => void;
   redo: () => void;
   saveToHistory: () => void;
+  setComponents: (components: ComponentConfig[]) => void;
+  setCurrentAppId: (id: string | null) => void;
 }
 
 export const useBuilderStore = create<BuilderState>((set, get) => ({
   components: [],
   selectedId: null,
+  currentAppId: null,
   history: [[]],
   historyIndex: 0,
 
+  setCurrentAppId: (currentAppId) => set({ currentAppId }),
   addComponent: (component) => {
     const { components, history, historyIndex } = get();
     const newComponents = [...components, component];
@@ -98,5 +103,12 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
         historyIndex: historyIndex + 1
       });
     }
+  },
+  setComponents: (components) => {
+    set({
+      components,
+      history: [components],
+      historyIndex: 0
+    });
   }
 }));

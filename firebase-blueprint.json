@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Root container for all project resources",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "memberships": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "email": { "type": "string" },
+              "role": { "type": "string", "enum": ["admin", "member"] },
+              "status": { "type": "string" },
+              "invitedAt": { "type": "string" }
+            }
+          }
+        },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "ownerId"]
+    },
+    "Table": {
+      "title": "Table",
+      "description": "Schema definition for a data table",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "fields": { "type": "array" },
+        "type": { "type": "string" },
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      },
+      "required": ["id", "name", "fields"]
+    },
+    "Record": {
+      "title": "Record",
+      "description": "A single row of data in a table",
+      "type": "object",
+      "properties": {
+        "createdAt": { "type": "object" },
+        "updatedAt": { "type": "object" }
+      }
+    },
+    "Dashboard": {
+      "title": "Dashboard",
+      "description": "Analytical view configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "cards": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "workspaceId", "name", "cards"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Document-based report configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "elements": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "workspaceId", "name", "elements"]
+    },
+    "App": {
+      "title": "Application",
+      "description": "Application configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "config": { "type": "object" }
+      }
+    }
+  },
+  "firestore": {
+    "/workspaces/{workspaceId}": {
+      "schema": "Workspace",
+      "description": "Workspace settings and membership"
+    },
+    "/workspaces/{workspaceId}/tables/{tableId}": {
+      "schema": "Table",
+      "description": "Table schemas"
+    },
+    "/workspaces/{workspaceId}/tableData/{tableId}/rows/{rowId}": {
+      "schema": "Record",
+      "description": "Actual table data"
+    },
+    "/workspaces/{workspaceId}/dashboards/{dashboardId}": {
+      "schema": "Dashboard",
+      "description": "Dashboards"
+    },
+    "/workspaces/{workspaceId}/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Reports"
+    },
+    "/workspaces/{workspaceId}/apps/{appId}": {
+      "schema": "App",
+      "description": "Applications"
+    }
+  }
+}

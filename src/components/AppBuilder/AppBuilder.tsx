@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
     Layout, 
     Type, 
@@ -17,6 +17,7 @@ import {
     Minus,
     Type as TextIcon,
     ChevronDown,
+    ChevronRight,
     ToggleLeft,
     Calendar,
     Upload,
@@ -26,7 +27,8 @@ import {
     BarChart,
     TrendingUp,
     Tag as TagIcon,
-    Square
+    Square,
+    Database
 } from 'lucide-react';
 import { 
     DndContext, 
@@ -41,10 +43,16 @@ import {
     defaultDropAnimationSideEffects
 } from '@dnd-kit/core';
 import { cn } from '../../lib/utils';
+import { motion } from 'motion/react';
 import { useBuilderStore } from '../../store/builderStore';
+import { useAuthStore } from '../../store/authStore';
+import { dataService } from '../../services/dataService';
+import { db } from '../../lib/firebase';
+import { doc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 import { useSchemaStore } from '../../store/schemaStore';
 import { ComponentConfig } from '../../types';
 import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { ApplicationsView } from './ApplicationsView';
 
 const COMPONENT_TYPES = {
     LAYOUT: [
@@ -83,64 +91,86 @@ export function AppBuilder() {
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
     const [showPreview, setShowPreview] = useState(false);
     const [showPublish, setShowPublish] = useState(false);
+    const [showAppSettings, setShowAppSettings] = useState(false);
+    const [showManageDatasources, setShowManageDatasources] = useState(false);
     const [publishStatus, setPublishStatus] = useState<'idle' | 'deploying' | 'success'>('idle');
     const [toast, setToast] = useState<string | null>(null);
+    const [currentAppData, setCurrentAppData] = useState<any>(null);
+    const [formState, setFormState] = useState<Record<string, any>>({});
 
+    const { selectedProjectId } = useAuthStore();
     const { 
         components, 
         selectedId, 
+        currentAppId,
         addComponent, 
         updateComponent, 
         deleteComponent, 
         selectComponent,
+        setCurrentAppId,
         undo,
-        redo
+        redo,
+        setComponents
     } = useBuilderStore();
+
+    const { tables } = useSchemaStore();
 
     const sensors = useSensors(useSensor(PointerSensor, {
         activationConstraint: { distance: 5 }
     }));
 
-    const showToast = (message: string) => {
+    const showToast = useCallback((message: string) => {
         setToast(message);
         setTimeout(() => setToast(null), 3000);
+    }, []);
+
+    // Derive unique datasources from components
+    const usedDatasources = useMemo(() => {
+        const ids = new Set<string>();
+        components.forEach(c => {
+            if (c.properties.dataSource) ids.add(c.properties.dataSource);
+        });
+        if (currentAppData?.dataSourceId) ids.add(currentAppData.dataSourceId);
+        return Array.from(ids).map(id => tables.find(t => t.id === id)).filter(Boolean);
+    }, [components, currentAppData, tables]);
+
+    const handleSave = async () => {
+        if (!selectedProjectId || !currentAppId) return;
+        try {
+            await setDoc(doc(db, 'projects', selectedProjectId, 'apps', currentAppId), {
+                id: currentAppId,
+                projectId: selectedProjectId,
+                components,
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+            showToast('Application saved to cloud');
+        } catch (e) {
+            console.error(e);
+            showToast('Save failed');
+        }
     };
 
-    const handleDragStart = (event: DragStartEvent) => {
-        const { active } = event;
-        setActiveDragItem(active.data.current);
-    };
+    useEffect(() => {
+        if (!selectedProjectId || !currentAppId) {
+            setComponents([]);
+            setCurrentAppData(null);
+            return;
+        }
 
-    const handleDragEnd = (event: DragEndEvent) => {
-        const { active, over } = event;
-        setActiveDragItem(null);
-
-        if (over && over.id === 'canvas-dropzone') {
-            const type = active.data.current?.type;
-            const label = active.data.current?.label;
-            
-            if (type) {
-                const newComponent: ComponentConfig = {
-                    id: Math.random().toString(36).substr(2, 9),
-                    type,
-                    label,
-                    properties: getDefaultProperties(type),
-                    position: { x: 0, y: 0 }
-                };
-                addComponent(newComponent);
+        const unsub = onSnapshot(doc(db, 'projects', selectedProjectId, 'apps', currentAppId), (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                setComponents(data.components || []);
+                setCurrentAppData(data);
             }
-        }
-    };
+        });
+        return () => unsub();
+    }, [selectedProjectId, currentAppId, setComponents]);
 
-    const getDefaultProperties = (type: string) => {
-        switch (type) {
-            case 'heading': return { text: 'New Heading', size: 'h1' };
-            case 'text': return { text: 'Start typing here...' };
-            case 'button': return { label: 'Click Me', style: 'primary' };
-            case 'input': return { label: 'Label', placeholder: 'Enter value...', required: false };
-            case 'table': return { dataSource: 'contacts' };
-            default: return { label: type.charAt(0).toUpperCase() + type.slice(1), visibility: true };
-        }
+    const handleUpdateAppSettings = async (updates: any) => {
+        if (!selectedProjectId || !currentAppId) return;
+        await setDoc(doc(db, 'projects', selectedProjectId, 'apps', currentAppId), updates, { merge: true });
+        showToast('Settings updated');
     };
 
     // Keyboard shortcuts
@@ -168,7 +198,50 @@ export function AppBuilder() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedId, undo, redo, deleteComponent, selectComponent]);
+    }, [selectedId, undo, redo, deleteComponent, selectComponent, showToast]);
+
+    const handleDragStart = (event: DragStartEvent) => {
+        const { active } = event;
+        setActiveDragItem(active.data.current);
+    };
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        setActiveDragItem(null);
+
+        if (over && over.id === 'canvas-dropzone') {
+            const data = active.data.current;
+            const type = data?.type;
+
+            if (type) {
+                const newComponent: ComponentConfig = {
+                    id: `${type}_${Math.random().toString(36).substr(2, 9)}`,
+                    type,
+                    label: data.label,
+                    properties: getDefaultProperties(type)
+                };
+
+                addComponent(newComponent);
+            }
+        }
+    };
+
+    const getDefaultProperties = (type: string) => {
+        switch (type) {
+            case 'heading': return { text: 'Heading', size: 'h1' };
+            case 'text': return { text: 'Paragraph text content...' };
+            case 'button': return { label: 'Click Me', style: 'primary', actionType: 'submit' };
+            case 'input': return { label: 'Field Label', placeholder: 'Enter value...', required: false };
+            case 'select': return { label: 'Dropdown', options: [{ value: '1', label: 'Option 1' }, { value: '2', label: 'Option 2' }] };
+            case 'toggle': return { label: 'Toggle', options: ['On', 'Off'] };
+            case 'table': return { dataSource: '' };
+            default: return {};
+        }
+    };
+
+    if (!currentAppId) {
+        return <ApplicationsView onSelectApp={(id) => setCurrentAppId(id)} />;
+    }
 
     const handlePublish = () => {
         setShowPublish(true);
@@ -186,9 +259,9 @@ export function AppBuilder() {
         >
             <div className="flex-1 flex overflow-hidden">
                 {/* Left Palette */}
-                <aside className="w-64 bg-white border-r border-neutral-200 flex flex-col shrink-0">
-                    <div className="p-4 border-b border-neutral-200">
-                        <h3 className="font-bold text-neutral-900 text-sm">Components</h3>
+                <aside className="w-64 bg-white dark:bg-slate-900 border-r border-neutral-200 dark:border-slate-800 flex flex-col shrink-0 transition-colors duration-300">
+                    <div className="p-4 border-b border-neutral-200 dark:border-slate-800">
+                        <h3 className="font-bold text-neutral-900 dark:text-white text-sm">Components</h3>
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-6">
                         <PaletteSection title="Layout" items={COMPONENT_TYPES.LAYOUT} />
@@ -198,19 +271,41 @@ export function AppBuilder() {
                 </aside>
 
                 {/* Canvas Area */}
-                <div className="flex-1 flex flex-col bg-neutral-100 overflow-hidden">
+                <div className="flex-1 flex flex-col bg-neutral-100 dark:bg-slate-950 overflow-hidden transition-colors duration-300">
                     {/* Toolbar */}
-                    <div className="h-12 border-b border-neutral-200 bg-white flex items-center px-4 justify-between shrink-0">
-                        <div className="flex items-center gap-1 bg-neutral-100 p-1 rounded-lg">
-                            <ViewToggle active={viewMode === 'desktop'} onClick={() => setViewMode('desktop')} icon={<Monitor className="w-4 h-4" />} />
-                            <ViewToggle active={viewMode === 'tablet'} onClick={() => setViewMode('tablet')} icon={<Tablet className="w-4 h-4" />} />
-                            <ViewToggle active={viewMode === 'mobile'} onClick={() => setViewMode('mobile')} icon={<Smartphone className="w-4 h-4" />} />
+                    <div className="h-12 border-b border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center px-4 justify-between shrink-0 transition-colors duration-300">
+                        <div className="flex items-center gap-4">
+                            <button 
+                                onClick={() => setCurrentAppId(null)}
+                                className="p-1.5 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg text-neutral-400 group transition-colors"
+                                title="Back to All Applications"
+                            >
+                                <X className="w-5 h-5 group-hover:text-neutral-900 dark:group-hover:text-white transition-colors" />
+                            </button>
+                            <div className="h-6 w-[1px] bg-neutral-200 dark:bg-slate-800"></div>
+                            <div className="flex items-center gap-1 bg-neutral-100 dark:bg-slate-800 p-1 rounded-lg">
+                                <ViewToggle active={viewMode === 'desktop'} onClick={() => setViewMode('desktop')} icon={<Monitor className="w-4 h-4" />} />
+                                <ViewToggle active={viewMode === 'tablet'} onClick={() => setViewMode('tablet')} icon={<Tablet className="w-4 h-4" />} />
+                                <ViewToggle active={viewMode === 'mobile'} onClick={() => setViewMode('mobile')} icon={<Smartphone className="w-4 h-4" />} />
+                            </div>
                         </div>
 
                         <div className="flex items-center gap-2">
+                             <button 
+                                onClick={() => setShowAppSettings(true)}
+                                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-md transition-all group"
+                            >
+                                <Settings2 className="w-4 h-4 group-hover:rotate-90 transition-transform" /> Settings
+                            </button>
+                             <button 
+                                onClick={handleSave}
+                                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-md transition-colors"
+                            >
+                                <Layout className="w-4 h-4" /> Save
+                            </button>
                             <button 
                                 onClick={() => setShowPreview(true)}
-                                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-neutral-600 hover:bg-neutral-100 rounded-md transition-colors"
+                                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-md transition-colors"
                             >
                                 <Play className="w-4 h-4" /> Preview
                             </button>
@@ -231,7 +326,7 @@ export function AppBuilder() {
 
                 {/* Right Properties Panel */}
                 <aside className="w-72 bg-white border-l border-neutral-200 flex flex-col shrink-0">
-                    <PropertiesPanel />
+                    <PropertiesPanel dataSourceId={currentAppData?.dataSourceId} />
                 </aside>
             </div>
 
@@ -259,22 +354,31 @@ export function AppBuilder() {
             {showPreview && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-8">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPreview(false)}></div>
-                    <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-full flex flex-col overflow-hidden">
-                        <div className="h-14 border-b border-neutral-200 flex items-center justify-between px-6 shrink-0 bg-neutral-50">
-                            <h3 className="font-bold text-neutral-900">Application Preview</h3>
-                            <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-neutral-200 rounded-full transition-colors">
-                                <X className="w-5 h-5 text-neutral-500" />
+                    <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl h-full flex flex-col overflow-hidden border border-neutral-200 dark:border-slate-800 transition-colors duration-300">
+                        <div className="h-14 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between px-6 shrink-0 bg-neutral-50 dark:bg-slate-900/50">
+                            <h3 className="font-bold text-neutral-900 dark:text-white">Application Preview</h3>
+                            <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-neutral-200 dark:hover:bg-slate-800 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-neutral-500 dark:text-slate-400" />
                             </button>
                         </div>
-                        <div className="flex-1 overflow-auto p-8 bg-neutral-100">
-                             <div className="bg-white shadow-xl min-h-full p-12 max-w-4xl mx-auto rounded-lg">
+                        <div className="flex-1 overflow-auto p-8 bg-neutral-100 dark:bg-slate-950 transition-colors duration-300">
+                             <div className="bg-white dark:bg-slate-900 shadow-xl min-h-full p-12 max-w-4xl mx-auto rounded-lg border border-neutral-200 dark:border-slate-800 transition-colors duration-300">
                                  {components.length === 0 ? (
                                      <div className="text-center py-20">
-                                         <p className="text-neutral-400">Preview is empty. Add components to the canvas.</p>
+                                         <p className="text-neutral-400 dark:text-slate-500 font-medium">Preview is empty. Add components to the canvas.</p>
                                      </div>
                                  ) : (
                                      <div className="space-y-4">
-                                         {components.map(c => <RenderComponent key={c.id} component={c} preview />)}
+                                         {components.map(c => (
+                                             <RenderComponent 
+                                                key={c.id} 
+                                                component={c} 
+                                                preview 
+                                                formState={formState}
+                                                onFormUpdate={(field, val) => setFormState(prev => ({...prev, [field]: val}))}
+                                                appContext={currentAppData}
+                                             />
+                                         ))}
                                      </div>
                                  )}
                              </div>
@@ -302,21 +406,21 @@ export function AppBuilder() {
                                     </div>
                                 </>
                             ) : (
-                                <>
-                                    <div className="w-16 h-16 bg-success-50 text-success-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                 <>
+                                    <div className="w-16 h-16 bg-success-50 dark:bg-emerald-950/30 text-success-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-6">
                                         <Zap className="w-8 h-8" />
                                     </div>
-                                    <h3 className="text-xl font-bold text-neutral-900 mb-2">Application Published Successfully</h3>
-                                    <p className="text-neutral-500 mb-6 font-medium">Your app is now live and ready for production.</p>
+                                    <h3 className="text-xl font-bold text-neutral-900 dark:text-white mb-2">Application Published Successfully</h3>
+                                    <p className="text-neutral-500 dark:text-slate-400 mb-6 font-medium">Your app is now live and ready for production.</p>
                                     
-                                    <div className="bg-neutral-50 p-4 rounded-xl border border-neutral-200 mb-8 flex items-center justify-between">
-                                        <span className="text-sm font-mono text-neutral-600">https://nexus.app/my-crm-app</span>
-                                        <button onClick={() => showToast('URL copied')} className="text-primary-600 text-xs font-bold hover:underline">Copy URL</button>
+                                    <div className="bg-neutral-50 dark:bg-slate-800 p-4 rounded-xl border border-neutral-200 dark:border-slate-700 mb-8 flex items-center justify-between">
+                                        <span className="text-sm font-mono text-neutral-600 dark:text-slate-300">https://nexus.app/my-crm-app</span>
+                                        <button onClick={() => showToast('URL copied')} className="text-primary-600 dark:text-primary-400 text-xs font-bold hover:underline">Copy URL</button>
                                     </div>
 
                                     <button 
                                         onClick={() => setShowPublish(false)}
-                                        className="w-full bg-primary-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all"
+                                        className="w-full bg-primary-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-primary-200 dark:shadow-primary-900/20 hover:bg-primary-700 transition-all"
                                     >
                                         Done
                                     </button>
@@ -324,6 +428,181 @@ export function AppBuilder() {
                             )}
                         </div>
                     </div>
+                </div>
+            )}
+
+            {showAppSettings && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm shadow-2xl" onClick={() => setShowAppSettings(false)}></div>
+                    <div className="relative bg-white dark:bg-[#1E293B] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-8 py-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-800/10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center">
+                                    <Settings2 className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-neutral-900 dark:text-white">Application Settings</h3>
+                                    <p className="text-xs text-neutral-500">Configure global parameters and data links.</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowAppSettings(false)} className="p-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-neutral-500" />
+                            </button>
+                        </div>
+                        <div className="p-8 space-y-6 max-h-[60vh] overflow-y-auto">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Application Name</label>
+                                <input 
+                                    type="text" 
+                                    value={currentAppData?.name || ''}
+                                    onChange={(e) => handleUpdateAppSettings({ name: e.target.value })}
+                                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white transition-all shadow-sm"
+                                />
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Data Connectivity</label>
+                                <button 
+                                    onClick={() => setShowManageDatasources(true)}
+                                    className="w-full flex items-center justify-between px-4 py-3 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold hover:border-primary-600 transition-all dark:text-white group text-left"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-white dark:bg-[#1E293B] rounded-lg shadow-sm border border-neutral-100 dark:border-neutral-800 group-hover:scale-110 transition-transform">
+                                            <Database className="w-4 h-4 text-primary-600" />
+                                        </div>
+                                        <div>
+                                            <div className="text-xs">Manage Application Datasources</div>
+                                            <div className="text-[10px] text-neutral-400 font-medium">Currently using {usedDatasources.length} tables</div>
+                                        </div>
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-neutral-300" />
+                                </button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Operation Mode</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {[
+                                        { id: 'view_only', label: 'View Only' },
+                                        { id: 'add', label: 'Add Records' },
+                                        { id: 'update', label: 'Update Records' },
+                                        { id: 'delete', label: 'Delete Records' },
+                                    ].map(mode => (
+                                        <button
+                                            key={mode.id}
+                                            type="button"
+                                            onClick={() => handleUpdateAppSettings({ mode: mode.id })}
+                                            className={cn(
+                                                "p-2.5 rounded-xl border-2 text-[10px] font-bold transition-all",
+                                                currentAppData?.mode === mode.id 
+                                                    ? "bg-primary-600 border-primary-600 text-white shadow-lg shadow-primary-200/50" 
+                                                    : "bg-white dark:bg-[#0F172A] border-neutral-100 dark:border-neutral-800 text-neutral-400"
+                                            )}
+                                        >
+                                            {mode.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {currentAppData?.dataSourceId && (
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Key Fields (for matching)</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {tables.find(t => t.id === currentAppData.dataSourceId)?.fields.map(f => (
+                                            <button
+                                                key={f.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    const keys = currentAppData.keyFields || [];
+                                                    const newKeys = keys.includes(f.id) 
+                                                        ? keys.filter((id: string) => id !== f.id)
+                                                        : [...keys, f.id];
+                                                    handleUpdateAppSettings({ keyFields: newKeys });
+                                                }}
+                                                className={cn(
+                                                    "px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all",
+                                                    (currentAppData.keyFields || []).includes(f.id)
+                                                        ? "bg-primary-600 border-primary-600 text-white"
+                                                        : "bg-neutral-50 dark:bg-[#0F172A] border-neutral-200 dark:border-neutral-800 text-neutral-500"
+                                                )}
+                                            >
+                                                {f.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="pt-4 flex justify-end">
+                                <button 
+                                    onClick={() => setShowAppSettings(false)}
+                                    className="w-full py-4 bg-neutral-900 dark:bg-primary-600 text-white font-bold rounded-2xl hover:bg-neutral-800 dark:hover:bg-primary-500 transition-all active:scale-95 shadow-xl shadow-neutral-200/50 dark:shadow-primary-900/20"
+                                >Save & Close</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showManageDatasources && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-neutral-900/60 backdrop-blur-md" onClick={() => setShowManageDatasources(false)}></div>
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="relative bg-white dark:bg-[#1E293B] rounded-3xl shadow-2xl w-full max-w-md overflow-hidden"
+                    >
+                        <div className="px-8 py-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-[#0F172A]/50">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-primary-50 dark:bg-primary-900/20 rounded-xl text-primary-600">
+                                    <Database className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-neutral-900 dark:text-white">Active Datasources</h3>
+                                    <p className="text-[10px] font-bold text-neutral-500 tracking-tight uppercase">Connected tables for this app</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowManageDatasources(false)} className="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-neutral-500" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-3">
+                            {tables.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <Database className="w-12 h-12 text-neutral-200 mx-auto mb-4" />
+                                    <p className="text-sm text-neutral-400 italic font-medium">No datasources found in project.</p>
+                                </div>
+                            ) : (
+                                tables.map(table => (
+                                    <div key={table?.id} className="flex items-center justify-between p-4 bg-neutral-50 dark:bg-[#0F172A] rounded-2xl border border-neutral-100 dark:border-neutral-800 hover:border-primary-600 transition-all group">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-white dark:bg-[#1E293B] shadow-sm flex items-center justify-center text-primary-600 border border-neutral-100 dark:border-neutral-800">
+                                                <Database className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <div className="text-sm font-black text-neutral-900 dark:text-white">{table?.name}</div>
+                                                <div className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
+                                                    {table?.fields.length} Fields • {table?.id === currentAppData?.dataSourceId ? 'Primary Source' : (usedDatasources.some(u => u?.id === table.id) ? 'Linked Source' : 'Available Source')}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {table?.id !== currentAppData?.dataSourceId && (
+                                            <button 
+                                                onClick={() => handleUpdateAppSettings({ dataSourceId: table?.id })}
+                                                className="text-[10px] font-black text-primary-600 uppercase hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >Set as Primary</button>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+
+                            <button 
+                                onClick={() => setShowManageDatasources(false)}
+                                className="w-full py-4 mt-6 bg-neutral-900 dark:bg-[#0F172A] text-white font-bold rounded-2xl hover:bg-neutral-800 dark:hover:bg-neutral-800 transition-all active:scale-95"
+                            >Close</button>
+                        </div>
+                    </motion.div>
                 </div>
             )}
 
@@ -360,14 +639,14 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
             {...listeners}
             {...attributes}
             className={cn(
-                "flex flex-col items-center gap-2 p-3 bg-neutral-50 border border-neutral-100 rounded-xl hover:border-primary-600 hover:bg-white hover:shadow-sm cursor-grab active:cursor-grabbing transition-all group",
+                "flex flex-col items-center gap-2 p-3 bg-neutral-50 dark:bg-slate-800 border border-neutral-100 dark:border-slate-700 rounded-xl hover:border-primary-600 dark:hover:border-primary-500 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all group",
                 isDragging && "opacity-0"
             )}
         >
-            <div className="text-neutral-400 group-hover:text-primary-600 transition-colors">
+            <div className="text-neutral-400 dark:text-slate-500 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                 {icon}
             </div>
-            <span className="text-[10px] font-medium text-neutral-600 truncate w-full text-center">{label}</span>
+            <span className="text-[10px] font-medium text-neutral-600 dark:text-slate-400 truncate w-full text-center">{label}</span>
         </div>
     );
 }
@@ -382,30 +661,30 @@ function Canvas({ viewMode }: { viewMode: string }) {
         <div 
             ref={setNodeRef}
             className={cn(
-                "bg-white shadow-2xl transition-all duration-300 min-h-[600px] border relative p-8",
+                "bg-white dark:bg-slate-900 shadow-2xl transition-all duration-300 min-h-[600px] border relative p-8",
                 viewMode === 'desktop' && "w-full max-w-5xl",
                 viewMode === 'tablet' && "w-[768px]",
                 viewMode === 'mobile' && "w-[375px]",
-                isOver ? "border-primary-600 bg-primary-50/10" : "border-neutral-200"
+                isOver ? "border-primary-600 bg-primary-50/10 dark:bg-primary-900/10" : "border-neutral-200 dark:border-slate-800"
             )}
             onClick={(e) => {
                 if (e.target === e.currentTarget) selectComponent(null);
             }}
         >
             {/* Canvas Header/Status Bar */}
-            <div className="absolute -top-10 left-0 text-[10px] font-bold text-neutral-500 uppercase tracking-widest flex gap-4 items-center">
-                <span className="bg-neutral-200 px-2 py-0.5 rounded text-neutral-700">Main Screen</span>
-                <span className="text-neutral-300">•</span>
+            <div className="absolute -top-10 left-0 text-[10px] font-bold text-neutral-500 dark:text-slate-500 uppercase tracking-widest flex gap-4 items-center">
+                <span className="bg-neutral-200 dark:bg-slate-800 px-2 py-0.5 rounded text-neutral-700 dark:text-slate-300">Main Screen</span>
+                <span className="text-neutral-300 dark:text-slate-700">•</span>
                 <span>{components.length} Components</span>
             </div>
 
             {components.length === 0 ? (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                      <div className="text-center opacity-40">
-                         <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-neutral-200">
-                             <Plus className="w-8 h-8 text-neutral-400" />
+                         <div className="w-16 h-16 bg-neutral-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-neutral-200 dark:border-slate-700">
+                             <Plus className="w-8 h-8 text-neutral-400 dark:text-slate-500" />
                          </div>
-                         <p className="text-neutral-500 font-bold uppercase tracking-widest text-xs">Drop zone</p>
+                         <p className="text-neutral-500 dark:text-slate-400 font-bold uppercase tracking-widest text-xs">Drop zone</p>
                      </div>
                 </div>
             ) : (
@@ -448,45 +727,195 @@ function Canvas({ viewMode }: { viewMode: string }) {
     );
 }
 
-function RenderComponent({ component, preview }: { component: ComponentConfig, preview?: boolean, key?: any }) {
+function RenderComponent({ 
+    component, 
+    preview, 
+    formState, 
+    onFormUpdate, 
+    appContext 
+}: { 
+    component: ComponentConfig, 
+    preview?: boolean, 
+    formState?: Record<string, any>,
+    onFormUpdate?: (field: string, val: any) => void,
+    appContext?: any,
+    key?: string
+}) {
     const { type, properties } = component;
+    const { selectedProjectId } = useAuthStore();
 
     switch (type) {
         case 'heading':
             const HeadingTag = (properties.size || 'h1') as any;
             return <HeadingTag className={cn(
-                "font-bold text-neutral-900 tracking-tight",
+                "font-bold text-neutral-900 dark:text-white tracking-tight",
                 properties.size === 'h1' && "text-4xl",
                 properties.size === 'h2' && "text-3xl",
                 properties.size === 'h3' && "text-2xl",
             )}>{properties.text || 'Heading'}</HeadingTag>;
         
         case 'text':
-            return <p className="text-neutral-600 leading-relaxed">{properties.text || 'Paragraph text content...'}</p>;
+            return <p className="text-neutral-600 dark:text-neutral-400 leading-relaxed">{properties.text || 'Paragraph text content...'}</p>;
 
         case 'button':
+            const handleClick = async () => {
+                if (!preview) return;
+                
+                if (properties.actionType === 'url' && properties.url) {
+                    window.open(properties.url, '_blank');
+                } else if (properties.actionType === 'application' && properties.targetAppId) {
+                    useBuilderStore.getState().setCurrentAppId(properties.targetAppId);
+                } else if (properties.actionType === 'cancel') {
+                    useBuilderStore.getState().setCurrentAppId(null);
+                } else if (properties.actionType === 'submit') {
+                    if (!appContext || !appContext.dataSourceId || !selectedProjectId) {
+                        alert('Application not fully configured for data operations');
+                        return;
+                    }
+                    
+                    const tableId = appContext.dataSourceId;
+                    const mode = appContext.mode || 'view_only';
+                    const keyFields = appContext.keyFields || [];
+
+                    try {
+                        if (mode === 'add') {
+                            await dataService.addRecord(selectedProjectId, tableId, formState || {});
+                            alert('Record added successfully');
+                        } else if (mode === 'update') {
+                            if (keyFields.length === 0) {
+                                alert('No key fields defined for update mode');
+                                return;
+                            }
+                            const q = query(
+                                collection(db, 'workspaces', selectedProjectId, 'tableData', tableId, 'rows'),
+                                ...keyFields.map(kf => where(kf, '==', formState?.[kf]))
+                            );
+                            const snap = await getDocs(q);
+                            if (snap.empty) {
+                                alert('No matching record found to update');
+                            } else {
+                                for (const docRef of snap.docs) {
+                                    await dataService.updateRecord(selectedProjectId, tableId, docRef.id, formState || {});
+                                }
+                                alert(`Updated ${snap.size} record(s)`);
+                            }
+                        } else if (mode === 'delete') {
+                            if (keyFields.length === 0) {
+                                alert('No key fields defined for delete mode');
+                                return;
+                            }
+                             const q = query(
+                                collection(db, 'workspaces', selectedProjectId, 'tableData', tableId, 'rows'),
+                                ...keyFields.map(kf => where(kf, '==', formState?.[kf]))
+                            );
+                            const snap = await getDocs(q);
+                            if (snap.empty) {
+                                alert('No matching record found to delete');
+                            } else {
+                                for (const docRef of snap.docs) {
+                                    await dataService.deleteRecord(selectedProjectId, tableId, docRef.id);
+                                }
+                                alert(`Deleted ${snap.size} record(s)`);
+                            }
+                        } else {
+                            alert('Application is in view-only mode');
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert('Operation failed');
+                    }
+                }
+            };
             return (
-                <button className={cn(
-                    "px-6 py-2.5 rounded-xl font-bold transition-all shadow-md active:scale-95",
-                    properties.style === 'primary' ? "bg-primary-600 text-white hover:bg-primary-700 shadow-primary-200" :
-                    properties.style === 'secondary' ? "bg-white border-2 border-neutral-200 text-neutral-700 hover:bg-neutral-50 shadow-neutral-100" :
-                    "bg-error-600 text-white hover:bg-error-700 shadow-error-200"
-                )}>
-                    {properties.label || 'Button'}
+                <button 
+                    onClick={handleClick}
+                    className={cn(
+                        "px-6 py-2.5 rounded-xl font-bold transition-all shadow-md active:scale-95",
+                        properties.style === 'primary' ? "bg-primary-600 text-white hover:bg-primary-700 shadow-primary-200" :
+                        properties.style === 'secondary' ? "bg-white border-2 border-neutral-200 text-neutral-700 hover:bg-neutral-50 shadow-neutral-100 dark:bg-[#1A1A1A] dark:border-neutral-800 dark:text-neutral-300" :
+                        "bg-error-600 text-white hover:bg-error-700 shadow-error-200"
+                    )}
+                >
+                    <div className="flex items-center gap-2">
+                        {properties.label || 'Button'}
+                        {!preview && properties.actionType && (
+                            <span className="text-[8px] opacity-50 uppercase bg-black/10 px-1 rounded">{properties.actionType}</span>
+                        )}
+                    </div>
                 </button>
+            );
+
+        case 'toggle':
+            const toggleOptions = properties.options || ['Off', 'On'];
+            const currentToggleVal = properties.fieldMapping && formState ? formState[properties.fieldMapping] : toggleOptions[0];
+            
+            return (
+                <div className="space-y-1.5 w-full">
+                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300">{properties.label || 'Toggle'}</label>
+                    <div className="flex bg-neutral-100 dark:bg-[#1E293B] p-1 rounded-xl w-fit">
+                        {toggleOptions.map((opt: string, idx: number) => (
+                            <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                    if (preview && properties.fieldMapping) {
+                                        onFormUpdate?.(properties.fieldMapping, opt);
+                                    }
+                                }}
+                                className={cn(
+                                    "px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                                    currentToggleVal === opt ? "bg-white dark:bg-[#334155] shadow-sm text-primary-600 dark:text-primary-400" : "text-neutral-400"
+                                )}
+                            >
+                                {opt}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+
+        case 'select':
+            const selectOptions = properties.options || [{ value: '1', label: 'Option 1' }];
+            return (
+                <div className="space-y-1.5 w-full">
+                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300">{properties.label || 'Dropdown'}</label>
+                    <div className="relative">
+                        <select 
+                            value={properties.fieldMapping && formState ? formState[properties.fieldMapping] : ''}
+                            onChange={(e) => preview && properties.fieldMapping && onFormUpdate?.(properties.fieldMapping, e.target.value)}
+                            className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none appearance-none dark:text-white"
+                            disabled={!preview}
+                        >
+                            <option value="">Select option...</option>
+                            {selectOptions.map((opt: any, idx: number) => (
+                                <option key={idx} value={opt.value}>{opt.label}</option>
+                            ))}
+                        </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+                    </div>
+                </div>
             );
 
         case 'input':
             return (
                 <div className="space-y-1.5 w-full">
-                    <label className="text-sm font-bold text-neutral-700 flex items-center gap-1">
-                        {properties.label || 'Input Label'}
-                        {properties.required && <span className="text-error-500">*</span>}
+                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1">
+                            {properties.label || 'Input Label'}
+                            {properties.required && <span className="text-error-500">*</span>}
+                        </div>
+                        {properties.fieldMapping && (
+                            <span className="text-[9px] font-bold text-primary-600 bg-primary-50 dark:bg-primary-900/30 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                <Database className="w-2 h-2" /> {properties.fieldMapping}
+                            </span>
+                        )}
                     </label>
                     <input 
                         type="text" 
+                        value={properties.fieldMapping && formState ? formState[properties.fieldMapping] : ''}
+                        onChange={(e) => preview && properties.fieldMapping && onFormUpdate?.(properties.fieldMapping, e.target.value)}
                         placeholder={properties.placeholder || 'Enter value...'}
-                        className="w-full px-4 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none transition-all"
+                        className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none transition-all dark:text-white"
                         disabled={!preview}
                     />
                 </div>
@@ -510,25 +939,28 @@ function RenderComponent({ component, preview }: { component: ComponentConfig, p
 
         case 'table':
             return (
-                <div className="w-full bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-sm">
-                    <div className="bg-neutral-50 border-b border-neutral-200 px-4 py-3 flex items-center justify-between">
-                        <span className="text-sm font-bold text-neutral-700">Data Source: {properties.dataSource || 'None'}</span>
+                <div className="w-full bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden shadow-sm">
+                    <div className="bg-neutral-50 dark:bg-[#1A1A1A] border-b border-neutral-200 dark:border-neutral-800 px-4 py-3 flex items-center justify-between">
+                        <span className="text-sm font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-2">
+                            <Database className="w-4 h-4 text-primary-600" />
+                            {properties.dataSource || 'No Data Source Connected'}
+                        </span>
                         <TableIcon className="w-4 h-4 text-neutral-400" />
                     </div>
                     <table className="w-full text-sm">
-                        <thead className="bg-neutral-50/50">
+                        <thead className="bg-neutral-50/50 dark:bg-[#1A1A1A]/50">
                             <tr>
-                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Name</th>
-                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Email</th>
-                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Status</th>
+                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Field A</th>
+                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Field B</th>
+                                <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase text-[10px] tracking-wider">Field C</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-neutral-100 font-medium">
+                        <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium">
                             {[1, 2, 3].map(i => (
                                 <tr key={i}>
-                                    <td className="px-4 py-3 text-neutral-400 italic">Placeholder row {i}...</td>
-                                    <td className="px-4 py-3 text-neutral-400 italic">...</td>
-                                    <td className="px-4 py-3 text-neutral-400 italic">...</td>
+                                    <td className="px-4 py-3 text-neutral-400 dark:text-neutral-500 italic">Connected to {properties.dataSource || '...'}</td>
+                                    <td className="px-4 py-3 text-neutral-400 dark:text-neutral-500 italic">...</td>
+                                    <td className="px-4 py-3 text-neutral-400 dark:text-neutral-500 italic">...</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -561,11 +993,24 @@ function RenderComponent({ component, preview }: { component: ComponentConfig, p
     }
 }
 
-function PropertiesPanel() {
-    const { selectedId, components, updateComponent, deleteComponent } = useBuilderStore();
+function PropertiesPanel({ dataSourceId }: { dataSourceId?: string }) {
+    const { selectedId, components, updateComponent, deleteComponent, currentAppId } = useBuilderStore();
     const { tables } = useSchemaStore();
+    const { selectedProjectId } = useAuthStore();
+    const [allApps, setAllApps] = useState<any[]>([]);
     
+    useEffect(() => {
+        if (!selectedProjectId) return;
+        const q = query(collection(db, 'projects', selectedProjectId, 'apps'));
+        const unsub = onSnapshot(q, (snapshot) => {
+            setAllApps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        });
+        return () => unsub();
+    }, [selectedProjectId]);
+
     const selectedComponent = components.find(c => c.id === selectedId);
+    const connectedTable = tables.find(t => t.id === dataSourceId);
+    const availableFields = connectedTable?.fields || [];
 
     if (!selectedComponent) {
         return (
@@ -653,6 +1098,42 @@ function PropertiesPanel() {
                 <section className="space-y-4">
                      <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest border-b border-neutral-100 pb-2">Configuration</h4>
                      
+                     {/* Data Binding - New Section */}
+                     {['input', 'select', 'toggle', 'date'].includes(type) && (
+                         <div className="space-y-4 p-3 bg-primary-50 rounded-xl border border-primary-100 animate-in fade-in slide-in-from-top-2 duration-200">
+                             <div className="flex items-center gap-2 mb-1">
+                                 <Database className="w-3 h-3 text-primary-600" />
+                                 <label className="text-[10px] font-black text-primary-600 uppercase tracking-widest">Field Mapping</label>
+                             </div>
+                             <div className="space-y-1.5">
+                                 <select 
+                                     value={properties.fieldMapping || ''}
+                                     onChange={(e) => {
+                                         const field = availableFields.find(f => f.id === e.target.value);
+                                         updateComponent(selectedId!, {
+                                             properties: { 
+                                                 ...properties, 
+                                                 fieldMapping: e.target.value,
+                                                 label: field ? field.name : properties.label 
+                                             }
+                                         });
+                                     }}
+                                     className="w-full px-3 py-2 bg-white border border-primary-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold text-primary-900"
+                                 >
+                                     <option value="">Manual Input</option>
+                                     {availableFields.map(f => (
+                                         <option key={f.id} value={f.id}>
+                                             {f.name} ({f.type})
+                                         </option>
+                                     ))}
+                                 </select>
+                                 <p className="text-[9px] text-primary-400 font-medium italic">
+                                     {dataSourceId ? `Connected to ${connectedTable?.name}` : 'No datasource connected to this app'}
+                                 </p>
+                             </div>
+                         </div>
+                     )}
+
                      {type === 'heading' && (
                          <>
                              <div className="space-y-1.5">
@@ -690,6 +1171,49 @@ function PropertiesPanel() {
                                      className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
                                  />
                              </div>
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Action</label>
+                                 <select 
+                                     value={properties.actionType || 'submit'}
+                                     onChange={(e) => handleUpdate('actionType', e.target.value)}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold"
+                                 >
+                                     <option value="url">External URL</option>
+                                     <option value="application">Navigate to App</option>
+                                     <option value="submit">Submit Form</option>
+                                     <option value="cancel">Cancel/Close</option>
+                                 </select>
+                             </div>
+                             
+                             {properties.actionType === 'url' && (
+                                 <div className="space-y-1.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200 animate-in slide-in-from-top-2">
+                                     <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Target URL</label>
+                                     <input 
+                                         type="text" 
+                                         placeholder="https://example.com"
+                                         value={properties.url || ''}
+                                         onChange={(e) => handleUpdate('url', e.target.value)}
+                                         className="w-full px-2 py-1.5 text-xs bg-white border border-neutral-200 rounded outline-none"
+                                     />
+                                 </div>
+                             )}
+
+                             {properties.actionType === 'application' && (
+                                 <div className="space-y-1.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200 animate-in slide-in-from-top-2">
+                                     <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Select Application</label>
+                                     <select 
+                                         value={properties.targetAppId || ''}
+                                         onChange={(e) => handleUpdate('targetAppId', e.target.value)}
+                                         className="w-full px-2 py-1.5 text-xs bg-white border border-neutral-200 rounded outline-none"
+                                     >
+                                         <option value="">Choose application...</option>
+                                         {allApps.filter(app => app.id !== currentAppId).map(app => (
+                                             <option key={app.id} value={app.id}>{app.name}</option>
+                                         ))}
+                                     </select>
+                                 </div>
+                             )}
+
                              <div className="space-y-1.5">
                                  <label className="text-[11px] font-bold text-neutral-700 uppercase">Style</label>
                                  <select 
@@ -745,6 +1269,70 @@ function PropertiesPanel() {
                                  <option value="">Select a table...</option>
                                  {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                              </select>
+                         </div>
+                     )}
+
+                     {type === 'toggle' && (
+                         <div className="space-y-4">
+                              <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Options (comma separated)</label>
+                                 <input 
+                                     type="text" 
+                                     placeholder="Option 1, Option 2, Option 3"
+                                     value={(properties.options || []).join(', ')}
+                                     onChange={(e) => handleUpdate('options', e.target.value.split(',').map(s => s.trim()))}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm outline-none"
+                                 />
+                                 <p className="text-[9px] text-neutral-500 italic">If &gt; 2 options, this will render as a segmented control.</p>
+                              </div>
+                         </div>
+                     )}
+
+                     {type === 'select' && (
+                         <div className="space-y-4">
+                              <label className="text-[11px] font-bold text-neutral-700 uppercase">Dropdown Options</label>
+                              <div className="space-y-2">
+                                  {(properties.options || []).map((opt: any, idx: number) => (
+                                      <div key={idx} className="flex gap-1">
+                                          <input 
+                                              placeholder="Label"
+                                              value={opt.label || ''}
+                                              onChange={(e) => {
+                                                  const newOpts = [...(properties.options || [])];
+                                                  newOpts[idx] = { ...newOpts[idx], label: e.target.value };
+                                                  handleUpdate('options', newOpts);
+                                              }}
+                                              className="flex-[2] px-2 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded outline-none"
+                                          />
+                                          <input 
+                                              placeholder="Value"
+                                              value={opt.value || ''}
+                                              onChange={(e) => {
+                                                  const newOpts = [...(properties.options || [])];
+                                                  newOpts[idx] = { ...newOpts[idx], value: e.target.value };
+                                                  handleUpdate('options', newOpts);
+                                              }}
+                                              className="flex-1 px-2 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded outline-none"
+                                          />
+                                          <button 
+                                              onClick={() => {
+                                                  const newOpts = (properties.options || []).filter((_: any, i: number) => i !== idx);
+                                                  handleUpdate('options', newOpts);
+                                              }}
+                                              className="p-1 text-neutral-400 hover:text-rose-600 transition-colors"
+                                          >
+                                              <Minus className="w-3 h-3" />
+                                          </button>
+                                      </div>
+                                  ))}
+                                  <button 
+                                      onClick={() => {
+                                          const newOpts = [...(properties.options || []), { label: '', value: '' }];
+                                          handleUpdate('options', newOpts);
+                                      }}
+                                      className="w-full py-1.5 text-[10px] font-bold text-primary-600 border border-dashed border-primary-200 rounded-lg hover:bg-primary-50 transition-colors uppercase tracking-widest"
+                                  >Add Option</button>
+                              </div>
                          </div>
                      )}
                 </section>

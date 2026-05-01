@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -------------------------------------------------------------------------
+    // GLOBAL HELPERS
+    // -------------------------------------------------------------------------
+    function isSignedIn() { return request.auth != null; }
+    function email() { return request.auth.token.email; }
+    function isVerified() { return request.auth.token.email_verified == true; }
+    
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // Workspace Membership Helpers
+    function getWorkspace(wsId) {
+      return get(/databases/$(database)/documents/workspaces/$(wsId)).data;
+    }
+    
+    function isMember(wsId) {
+      let ws = getWorkspace(wsId);
+      return isSignedIn() && (
+        ws.ownerId == request.auth.uid || 
+        ws.memberships.any(m => m.email == email() && m.status == 'active')
+      );
+    }
+
+    function isAdmin(wsId) {
+      let ws = getWorkspace(wsId);
+      return isSignedIn() && (
+        ws.ownerId == request.auth.uid || 
+        ws.memberships.any(m => m.email == email() && m.role == 'admin' && m.status == 'active')
+      );
+    }
+
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // WORKSPACES
+    // -------------------------------------------------------------------------
+    match /workspaces/{workspaceId} {
+      function isValidWorkspace(data) {
+        return data.keys().hasAll(['id', 'name', 'ownerId']) &&
+               data.id is string && data.id.size() <= 64 &&
+               data.name is string && data.name.size() <= 100 &&
+               data.ownerId is string;
+      }
+
+      allow get: if isSignedIn() && (existing().ownerId == request.auth.uid || existing().memberships.any(m => m.email == email()));
+      allow list: if isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.memberships.any(m => m.email == email()));
+      
+      allow create: if isSignedIn() && isValidWorkspace(incoming()) && incoming().ownerId == request.auth.uid;
+      
+      allow update: if isSignedIn() && (
+        // Owner can do anything
+        (existing().ownerId == request.auth.uid && isValidWorkspace(incoming())) ||
+        // Admin can update name/description but not members (except non-critical)
+        (isAdmin(workspaceId) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'updatedAt']))
+        // Joining or inviting is handled by specific actions in a real app, 
+        // for now we'll allow members to be added/removed if you are owner/admin
+      );
+      
+      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      // -----------------------------------------------------------------------
+      // TABLES
+      // -----------------------------------------------------------------------
+      match /tables/{tableId} {
+        function isValidTable(data) {
+          return data.keys().hasAll(['id', 'name', 'fields']) &&
+                 data.id == tableId &&
+                 data.name is string && data.name.size() <= 100 &&
+                 data.fields is list && data.fields.size() <= 100;
+        }
+
+        allow read: if isMember(workspaceId);
+        allow create: if isAdmin(workspaceId) && isValidTable(incoming());
+        allow update: if isAdmin(workspaceId) && isValidTable(incoming());
+        allow delete: if isAdmin(workspaceId);
+      }
+
+      // -----------------------------------------------------------------------
+      // TABLE DATA (RECORDS)
+      // -----------------------------------------------------------------------
+      match /tableData/{tableId}/rows/{rowId} {
+        allow read: if isMember(workspaceId);
+        allow write: if isMember(workspaceId); // More granular checks can be added if needed
+      }
+
+      // -----------------------------------------------------------------------
+      // DASHBOARDS
+      // -----------------------------------------------------------------------
+      match /dashboards/{dashboardId} {
+        function isValidDashboard(data) {
+          return data.keys().hasAll(['id', 'workspaceId', 'name', 'cards']) &&
+                 data.id == dashboardId &&
+                 data.workspaceId == workspaceId &&
+                 data.name is string && data.name.size() <= 100 &&
+                 data.cards is list;
+        }
+
+        allow read: if isMember(workspaceId);
+        allow create: if isMember(workspaceId) && isValidDashboard(incoming());
+        allow update: if isMember(workspaceId) && isValidDashboard(incoming());
+        allow delete: if isMember(workspaceId);
+      }
+
+      // -----------------------------------------------------------------------
+      // REPORTS
+      // -----------------------------------------------------------------------
+      match /reports/{reportId} {
+        function isValidReport(data) {
+          return data.keys().hasAll(['id', 'workspaceId', 'name', 'elements']) &&
+                 data.id == reportId &&
+                 data.workspaceId == workspaceId &&
+                 data.name is string && data.elements is list;
+        }
+
+        allow read: if isMember(workspaceId);
+        allow create: if isMember(workspaceId) && isValidReport(incoming());
+        allow update: if isMember(workspaceId) && isValidReport(incoming());
+        allow delete: if isMember(workspaceId);
+      }
+
+      // -----------------------------------------------------------------------
+      // APPS, WORKFLOWS, CONNECTORS
+      // -----------------------------------------------------------------------
+      match /apps/{appId} { allow read, write: if isMember(workspaceId); }
+      match /workflows/{wfId} { allow read, write: if isMember(workspaceId); }
+      match /connectors/{cId} { allow read, write: if isMember(workspaceId); }
+    }
+  }
+}
