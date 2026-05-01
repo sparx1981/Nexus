@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, LogIn, Mail, Lock, AlertCircle, Loader2, UserPlus } from 'lucide-react';
+import { Box, LogIn, Mail, Lock, AlertCircle, Loader2, UserPlus, ExternalLink } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { cn } from '../../lib/utils';
 import { auth, loginWithGoogle } from '../../lib/firebase';
@@ -201,7 +201,7 @@ export const LoginPage: React.FC = () => {
                 type="button"
                 onClick={handleTrimbleLogin}
                 disabled={loading}
-                className="w-full bg-[#E8F0FE] border border-[#1A56DB] text-[#1A56DB] py-3 rounded-xl font-bold hover:bg-[#DBEAFE] transition-all flex items-center justify-center gap-2"
+                className="w-full bg-[#005F9E] border border-[#005F9E] text-white py-3 rounded-xl font-bold hover:bg-opacity-90 transition-all flex items-center justify-center gap-2"
               >
                 <Box className="w-4 h-4" /> Sign in with Trimble ID
               </button>
@@ -213,9 +213,7 @@ export const LoginPage: React.FC = () => {
   );
 };
 
-const TRIMBLE_CLIENT_ID = 'nexus_platform_dev';
-
 const handleTrimbleLogin = () => {
-    // TODO: A backend endpoint at /auth/trimble/callback is needed to exchange the code for tokens.
-    window.location.href = `https://id.trimble.com/oauth/authorize?client_id=${TRIMBLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(window.location.origin + '/auth/trimble/callback')}&response_type=code&scope=openid profile email`;
+    const clientId = (import.meta as any).env.VITE_TRIMBLE_CLIENT_ID || 'nexus_platform_dev';
+    window.location.href = `https://identity.trimble.com/i/oauth2/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(window.location.origin + '/oauth/callback')}&scope=openid%20profile%20email`;
 };

@@ -9,7 +9,7 @@ import {
   Users,
   Settings
 } from 'lucide-react';
-import { db, auth, logout } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuthStore } from '../store/authStore';
 import { cn } from '../lib/utils';
@@ -22,7 +22,7 @@ export function ProjectPicker() {
   const [showCreate, setShowCreate] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   
-  const { user, setSelectedProjectId } = useAuthStore();
+  const { user, setSelectedProjectId, logout } = useAuthStore();
 
   useEffect(() => {
     async function fetchProjects() {

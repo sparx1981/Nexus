@@ -101,6 +101,8 @@ import { ReportSection } from './components/Reports/ReportSection';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('apps');
+  const [editingAppId, setEditingAppId] = useState<string | null>(null);
+  const [currentAppName, setCurrentAppName] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -110,11 +112,7 @@ export default function App() {
   const [showSearch, setShowSearch] = useState(false);
   
   // Theme state
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('nexus-theme');
-    if (saved) return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('nexus-theme') !== 'light');
   
   useEffect(() => {
     const root = window.document.documentElement;
@@ -126,9 +124,24 @@ export default function App() {
       localStorage.setItem('nexus-theme', 'light');
     }
   }, [isDarkMode]);
-  
+
   const { user, isAuthenticated, setUser, logout, selectedProjectId, setSelectedProjectId, setTrimbleAuth } = useAuthStore();
   const { fetchWorkspace } = useWorkspaceStore();
+  const { loadTables } = useSchemaStore();
+  
+  useEffect(() => {
+    if (editingAppId && selectedProjectId) {
+      const appRef = doc(db, 'workspaces', selectedProjectId, 'apps', editingAppId);
+      getDoc(appRef).then(snap => {
+        if (snap.exists()) {
+          setCurrentAppName(snap.data().name);
+        }
+      });
+    } else {
+      setCurrentAppName(null);
+    }
+  }, [editingAppId, selectedProjectId]);
+
   
   useEffect(() => {
     if (isAuthenticated) {
@@ -136,9 +149,11 @@ export default function App() {
         setSelectedProjectId('default');
       } else {
         fetchWorkspace(selectedProjectId);
+        const unsubscribe = loadTables();
+        return () => unsubscribe();
       }
     }
-  }, [isAuthenticated, selectedProjectId, fetchWorkspace, setSelectedProjectId]);
+  }, [isAuthenticated, selectedProjectId, fetchWorkspace, setSelectedProjectId, loadTables]);
   
   useSyncData();
   useSyncDashboards();
@@ -324,7 +339,7 @@ export default function App() {
         <header className="h-14 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between px-6 shrink-0 bg-white dark:bg-slate-900 z-20">
           <div className="flex items-center gap-4 flex-1">
             <h1 className="text-lg font-bold text-neutral-900 dark:text-white min-w-[120px]">
-              {activeTab === 'apps' && ""}
+              {activeTab === 'apps' && (editingAppId && currentAppName ? `Applications  ›  ${currentAppName}` : "Applications")}
               {activeTab === 'data' && "Data Studio"}
               {activeTab === 'workflows' && "Workflows"}
               {activeTab === 'dashboards' && "Dashboards"}
@@ -385,10 +400,10 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button 
-                onClick={() => setIsDarkMode(!isDarkMode)} 
-                className="p-2 text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-xl transition-all group active:scale-90"
-                title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2 text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-xl transition-all active:scale-90"
+              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
               {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
@@ -510,13 +525,13 @@ export default function App() {
 
         {/* Content Canvas */}
         <div className="flex-1 relative overflow-hidden flex flex-col pt-0">
-          {activeTab === 'apps' && <AppBuilder />}
+          {activeTab === 'apps' && <AppBuilder onEditingAppChange={setEditingAppId} />}
           {activeTab === 'data' && <DataStudio />}
           {activeTab === 'workflows' && <Workflows />}
           {activeTab === 'dashboards' && <DashboardSection />}
           {activeTab === 'reports' && <ReportSection />}
           {activeTab === 'connectors' && <DataStudio defaultTab="sources" />}
-          {activeTab === 'trimble' && <TrimbleConnectView />}
+          {activeTab === 'trimble' && <TrimbleConnectView onBack={() => setActiveTab('apps')} onConnect={() => setActiveTab('apps')} />}
           {activeTab === 'settings' && <ProjectSettings />}
         </div>
 

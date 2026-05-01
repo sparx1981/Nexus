@@ -150,7 +150,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
         </div>
         <button 
             onClick={() => setShowAddModal(true)}
-            className="bg-primary-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-lg shadow-primary-100 transition-all active:scale-95"
+            className="bg-primary-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-lg shadow-primary-500/20 transition-all active:scale-95"
         >
           <Plus className="w-4 h-4" /> New Application
         </button>

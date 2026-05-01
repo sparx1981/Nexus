@@ -1,6 +1,6 @@
 # Nexus Product Specification
 
-> **Last Updated:** 2026-05-01 | **Changed:** Fixed critical Firestore `permission-denied` errors by refactoring security rules logic and user query permissions. Decoupled workspace architecture to support multi-tenant projects via `selectedProjectId`. Standardized record path pattern to `workspaces/{workspaceId}/tableData/{tableId}/rows`.
+> **Last Updated:** 2026-05-01 | **Changed:** Implemented Workflow Designer DnD, enhanced Send Email action (CC/Attachments), real Firestore queries in Data Studio, CSV export in Query results, and expanded Integration portals (REST API / Trimble). Standardized field types and added CellInput for stable state management.
 
 ## 1. Product Concept
 Nexus is a browser-based architectural and business modeling workspace that bridges the gap between structured data and custom business applications. It allows users to design schemas, orchestrate logic via workflows, and build polished UIs with deep data integration.
@@ -10,7 +10,7 @@ Nexus is a browser-based architectural and business modeling workspace that brid
 - **State Management**: Zustand for editor state and auth.
 - **Backend/Database**: Firebase Firestore for real-time data persistence.
 - **Workspace Architecture**: Multi-tenant workspace model. All project resources are centralized under `workspaces/{workspaceId}`. The active `workspaceId` is dynamically managed via the `selectedProjectId` in `authStore`.
-- **Theming**: Integrated Light and Dark mode with professional grey scales (#F8FAFC, #F1F5F9).
+- **Theming**: Integrated Light and Dark mode with professional grey scales (#F8FAFC, #F1F5F9). Supports local persistence and document level class toggling.
 - **Data Layer**: Centralized `collections.ts` defines dynamic Firestore path factories. `dataService.ts` handles granular record operations with mandatory `workspaceId` injection.
 - **Error Handling**: Standardized `handleFirestoreError` in `dataService.ts` for consistent debugging and permission analysis.
 - **Authentication**: Firebase Authentication with support for Trimble Connect OAuth (token-based).
@@ -31,53 +31,51 @@ Collection defining the data models (entities).
 - `id`: string (doc ID)
 - `name`: string
 - `fields`: Field[]
-- `position`: { x: number, y: number }
+- `position`: { x: number, y: number } // Persisted node coordinates for Schema View
 
 #### `/workspaces/{workspaceId}/tableData/{tableId}/rows`
-The actual data entries for each table. Fields are dynamic based on the table's schema.
+The actual data entries for each table. Fields are dynamic based on the table's schema. Supports real-time `onSnapshot` synchronization.
 
 #### `/workspaces/{workspaceId}/dashboards`
 Configurations for analytical views.
-- `id`: string
-- `name`: string
-- `cards`: DashboardCard[]
-
-#### `/workspaces/{workspaceId}/reports`
-Configurations for document-based data exports and audits.
-- `id`: string
-- `elements`: ReportElement[]
 
 ## 4. Module Specifications
 
-### Applications (App Builder)
-- **Multi-App Management**: Complete listing view with Create, Edit, and Delete functionality.
-- **Persistence**: Real-time cloud sync using workspace paths.
-
 ### Data Studio
-- **Schema View**: React Flow canvas with node-based table management. Supports context menus for table operations.
+- **Schema View**: React Flow canvas with node-based table management. Supports context menus for table operations. Node positions are persisted in real-time. Includes an informational banner for onboarding.
 - **Calculated Fields Engine**: 
     - **Editor**: Supports basic formula builder and advanced JavaScript code input.
     - **Runtime**: Context-aware evaluation engine with access to `row`, `allRecords`, `sum()`, `avg()`, and `Math` functions. Use of `new Function` for performant runtime calculation.
-- **Table View**: Real-time record editing with Firestore `onSnapshot` integration.
+- **Table View**: Real-time record editing with Firestore `onSnapshot` integration. Includes CSV export and import capabilities. Uses `CellInput` for stable controlled state.
+- **CSV Import Engine**: 
+    - **Stages**: Choose Source -> Mapping -> Import.
+    - **Features**: Auto-schema detection for new tables, field mapping for existing tables, batch commit logic.
+- **Query Builder**:
+    - **Features**: UI-driven filter builder (Field, Operator, Value).
+    - **Integration**: Direct Firestore `query()` execution with `where`, `orderBy`, and `limit`.
+    - **Export**: Results can be exported as CSV via PapaParse.
 
-### Workflows (Visual Designer)
-- **Palette**: Triggers and Actions for business logic orchestration.
+### Workflow Designer
+- **Canvas**: React Flow-based automation engine with drag-and-drop support from a node palette.
+- **Stages**: 
+    - **Triggers**: Record Created, Record Updated, Scheduled, Webhook.
+    - **Actions**: Send Email (supports CC and Studio attachments), Update Record, Create Record, AI Generate.
+    - **Logic**: Condition (IF/ELSE), Loop, Delay.
+- **DnD Integration**: Node palette items use standard HTML5 DnD to transfer metadata. `reactFlowInstance.screenToFlowPosition` is used for precise placement upon drop.
 
-### Interactive Dashboards (Insight)
-- **Dashboard Designer**: High-fidelity drag-and-drop workspace for widget configuration.
-- **Data Connectivity**: Real-time binding to workspace tables. Select specific fields for Dimensions (X) and Measures (Y).
+### Integrations Portal
+- **REST API**: Custom JSON endpoint configuration with header management and live testing.
+- **Trimble Connect**: Specialized OAuth-based connector for syncing architectural project data, including region selection and webhook-driven real-time sync.
 
-### Reports & Audits
-- **Report Designer**: Document-centric editor for creating A4 data snapshots.
-- **Elements**: Supports Text, Table, Chart, and Image components.
-
-## 5. File Structure
-- `src/App.tsx`: Main Studio shell with sidebar navigation and sync initializers.
-- `src/lib/collections.ts`: Central source of truth for Firestore paths.
-- `src/store/dashboardStore.ts`: Persistent state for widget-based dashboards.
-- `src/store/reportStore.ts`: Persistent state for document-based reports.
-- `src/store/schemaStore.ts`: Management of tables, fields, and relationships.
-- `src/hooks/useSyncData.ts`: Global listener for workspace tables.
+## 5. File Structure (Key Files)
+- `src/App.tsx`: Main Studio shell with sidebar navigation and sync initializers. Handles Light/Dark mode persistence.
+- `src/components/DataStudio/DataStudio.tsx`: Core logic for Table and Query views. Standardizes `CellInput` and `evaluateExpression`.
+- `src/components/Workflows/WorkflowDesigner.tsx`: React Flow implementation with DnD and property management.
+- `src/components/Integrations/`: Specialized connector views (Trimble, REST API).
+- `src/components/DataStudio/CSVImportModal.tsx`: Specialized import engine.
+- `src/components/HelpResources.tsx`: Unified support center with User Docs, Developer Suite, and Release Notes.
+- `src/store/schemaStore.ts`: Management of tables, fields, and node positions.
+- `src/services/dataService.ts`: Standardized Firestore CRUD with diagnostic error handling.
 
 ## 6. Data Models
 ```typescript
@@ -86,6 +84,7 @@ export interface Table {
   name: string;
   description?: string;
   fields: Field[];
+  position?: { x: number; y: number };
 }
 
 export interface Field {
@@ -97,22 +96,23 @@ export interface Field {
 
 export enum FieldType {
   TEXT = 'text',
+  LONG_TEXT = 'long_text',
   NUMBER = 'number',
-  BOOLEAN = 'boolean',
+  CURRENCY = 'currency',
+  PERCENTAGE = 'percentage',
   DATE = 'date',
+  DATE_TIME = 'datetime',
+  BOOLEAN = 'boolean',
+  SINGLE_SELECT = 'single_select',
+  MULTI_SELECT = 'multi_select',
+  RELATION = 'relation',
+  FORMULA = 'formula',
+  FILE = 'file',
+  URL = 'url',
+  EMAIL = 'email',
+  PHONE = 'phone',
+  JSON = 'json',
+  AUTO_NUMBER = 'auto_number',
   CALCULATED = 'calculated',
-  RELATION = 'relation'
-}
-
-export interface DashboardCard {
-  id: string;
-  type: 'kpi' | 'bar' | 'line' | 'pie' | 'table';
-  dataSourceId: string;
-  config: any;
 }
 ```
-
-## 7. Build and Deployment
-- Standard React/Vite SPA.
-- Firebase integration requires `firebase-applet-config.json`.
-- Production build targets `dist/` directory.

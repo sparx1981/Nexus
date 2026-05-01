@@ -18,10 +18,12 @@ const RELEASE_NOTES: ReleaseNote[] = [
   {
     date: '2026-05-01',
     changes: [
-      'Multi-Workspace Support: Fully decoupled the architecture to support isolated multi-tenant projects. Users can now switch between different workspaces seamlessly.',
-      'Hardened Security Framework: Refactored Firestore Security Rules with "Master Gate" patterns and admin-level bypass for seamless maintenance.',
-      'Standardized Error Handling: Integrated `handleFirestoreError` across all modules to provide detailed diagnostic payloads for permission failures.',
-      'Auto-Provisioning: Enhanced workspace store to automatically provision secure default environments for new users.',
+      'Advanced Query Builder: Implemented real-time Firestore query execution with CSV export functionality.',
+      'Workflow Designer DnD: Enabled drag-and-drop orchestration for adding new stages to automation canvases.',
+      'Send Email Action+: Added CC support and file attachment capability for data-driven automations.',
+      'CSV Import Engine: New batch-processing modal supporting "Import to New Table" with auto-schema detection.',
+      'Trimble Connect integration: Full OAuth support and project synchronization view.',
+      'Visual Consistency: Standardized dark/light mode tokens across all builder components.'
     ]
   },
   {
@@ -84,6 +86,18 @@ const USER_DOCS: UserDoc[] = [
     category: 'App Builder',
     title: 'Binding Inputs to Fields',
     content: '1. Select an input or toggle component on the canvas. 2. In the Properties panel, look for the Field Mapping section. 3. Select a field from your connected table. 4. The label and value will now tether to that specific data entity.'
+  },
+  {
+    id: 'workflow-dnd',
+    category: 'Workflows',
+    title: 'Workflow Drag-and-Drop',
+    content: '1. Navigate to the Workflows section. 2. Drag a trigger or action from the left palette. 3. Drop it onto the canvas at your desired location. 4. Connect nodes by dragging edges between handles.'
+  },
+  {
+    id: 'email-config',
+    category: 'Workflows',
+    title: 'Enhanced Email Step',
+    content: '1. Select a Send Email node in your workflow. 2. In the properties panel, you can now add CC recipients and select file attachments from your Project Data studio directly.'
   },
   {
     id: 'workspaces-guide',
@@ -161,42 +175,72 @@ const DevSuiteTab = () => {
     const [selectedSnippet, setSelectedSnippet] = useState(DEV_DOCS[0]);
 
     const handleTryIt = (code: string) => {
-        console.log('Nexus API Try It:', code);
+        console.log('%c Nexus API Try It ', 'background: #2563eb; color: white; border-radius: 4px; padding: 2px 6px; font-weight: bold;');
+        console.log(code);
         navigator.clipboard.writeText(code);
+        alert('Code snippet copied to clipboard and logged to console!');
     };
 
     return (
         <div className="flex w-full h-full">
             <aside className="w-64 border-r border-neutral-200 dark:border-slate-800 overflow-y-auto p-4 bg-neutral-50 dark:bg-slate-900">
-                <div className="space-y-1">
-                    {DEV_DOCS.map(doc => (
-                        <button 
-                            key={doc.id}
-                            onClick={() => setSelectedSnippet(doc)}
-                            className={cn(
-                                "w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all truncate",
-                                selectedSnippet.id === doc.id 
-                                    ? "bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm border border-neutral-200 dark:border-slate-700" 
-                                    : "text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
-                            )}
-                        >
-                            {doc.title}
-                        </button>
-                    ))}
+                <div className="space-y-6">
+                    <div>
+                        <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-3 px-2">Current API</h4>
+                        <div className="space-y-1">
+                            {DEV_DOCS.map(doc => (
+                                <button 
+                                    key={doc.id}
+                                    onClick={() => setSelectedSnippet(doc)}
+                                    className={cn(
+                                        "w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all truncate",
+                                        selectedSnippet.id === doc.id 
+                                            ? "bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-sm border border-neutral-200 dark:border-slate-700" 
+                                            : "text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
+                                    )}
+                                >
+                                    {doc.title}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-3 px-2">Deprecated</h4>
+                        <div className="space-y-1">
+                            {DEPRECATED_EXAMPLES.map(doc => (
+                                <button 
+                                    key={doc.id}
+                                    onClick={() => setSelectedSnippet(doc)}
+                                    className={cn(
+                                        "w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all truncate opacity-50 grayscale hover:grayscale-0 hover:opacity-100",
+                                        selectedSnippet.id === doc.id ? "bg-neutral-100 dark:bg-slate-700 text-neutral-600 dark:text-slate-300" : "text-neutral-400 dark:text-slate-500"
+                                    )}
+                                >
+                                    {doc.title}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </aside>
             <main className="flex-1 overflow-y-auto p-8 bg-white dark:bg-slate-950">
                 <div className="max-w-2xl mx-auto">
-                    <h2 className="text-xl font-black text-neutral-900 dark:text-white mb-2">{selectedSnippet.title}</h2>
-                    <p className="text-sm text-neutral-500 dark:text-slate-400 mb-6">{selectedSnippet.description}</p>
+                    <div className="flex items-center justify-between mb-2">
+                        <h2 className="text-xl font-black text-neutral-900 dark:text-white uppercase tracking-tight">{selectedSnippet.title}</h2>
+                        {DEPRECATED_EXAMPLES.find(d => d.id === selectedSnippet.id) && (
+                            <span className="px-2 py-0.5 bg-rose-50 text-rose-600 text-[10px] font-black rounded uppercase tracking-widest">Deprecated</span>
+                        )}
+                    </div>
+                    <p className="text-sm text-neutral-500 dark:text-slate-400 mb-6 font-medium">{selectedSnippet.description}</p>
                     
                     <div className="relative group">
                         <pre className="bg-neutral-900 dark:bg-slate-900/50 text-neutral-100 p-6 rounded-2xl overflow-x-auto text-[13px] font-mono leading-relaxed border border-neutral-800 dark:border-slate-800">
-                            <code>{selectedSnippet.code}</code>
+                            <code className="text-emerald-400">{selectedSnippet.code}</code>
                         </pre>
                         <button 
                             onClick={() => handleTryIt(selectedSnippet.code)}
-                            className="absolute top-4 right-4 bg-primary-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xl opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary-700"
+                            className="absolute top-4 right-4 bg-primary-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-primary-700 active:scale-95"
                         >
                             Try It
                         </button>
@@ -278,6 +322,29 @@ try {
 } catch (e) {
   handleFirestoreError(e, OperationType.WRITE, 'path/id');
 }`
+    },
+    {
+        id: 'query-builder',
+        title: 'Firestore Query Builder',
+        description: 'Execute filtered queries against your workspace tables.',
+        code: `const q = query(
+  collection(db, 'workspaces', wsId, 'tableData', tableId, 'rows'),
+  where('status', '==', 'active'),
+  orderBy('createdAt', 'desc'),
+  limit(50)
+);
+const snap = await getDocs(q);`
+    }
+];
+
+const DEPRECATED_EXAMPLES = [
+    {
+        id: 'legacy-sync',
+        title: 'Legacy Sync Pattern',
+        description: 'Insecure client-side filtering (Deprecated 2026-04-20)',
+        code: `// DEPRECATED: Do not use client-side filtering
+const all = await getDocs(col);
+const filtered = all.docs.filter(d => d.data().type === 'test');`
     }
 ];
 

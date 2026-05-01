@@ -19,7 +19,7 @@ export function useSyncData() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const tables = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...(doc.data() as object)
       })) as any[];
       
       console.log(`useSyncData: Received ${tables.length} tables`);

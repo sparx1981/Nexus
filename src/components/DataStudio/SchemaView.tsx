@@ -12,7 +12,7 @@ import ReactFlow, {
   MarkerType
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Database, Plus, MoreHorizontal, Eye, Download, FileJson, Calendar, Hash, Trash2 } from 'lucide-react';
+import { Database, Plus, MoreHorizontal, Eye, Download, FileJson, Calendar, Hash, Trash2, X, Layout, Layers, AlertCircle, Settings, ChevronRight } from 'lucide-react';
 import { useSchemaStore } from '../../store/schemaStore';
 import { Table, FieldType } from '../../types';
 import { cn } from '../../lib/utils';
@@ -390,24 +390,42 @@ export function SchemaView() {
   };
 
   return (
-    <div className="flex-1 bg-neutral-50 dark:bg-[#0A0A0A] relative overflow-hidden pattern-dots text-neutral-200 dark:text-neutral-900">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeDragStop={onNodeDragStop}
-        nodeTypes={nodeTypes}
-        fitView
-      >
-        <Background />
-        <Controls />
-      </ReactFlow>
+    <div className="flex-1 flex flex-col relative bg-neutral-50 dark:bg-slate-950 transition-colors duration-300 overflow-hidden">
+      {/* Informational Banner */}
+      <div className="relative z-50 bg-primary-600 px-6 py-2 flex items-center justify-between shadow-lg">
+        <div className="flex items-center gap-3 text-white">
+          <div className="p-1.5 bg-white/20 rounded-lg">
+            <Layout className="w-4 h-4" />
+          </div>
+          <p className="text-xs font-bold tracking-tight">
+            Design your project data model below. Use nodes to represent tables and edges for relationships. All changes persist to Firestore.
+          </p>
+        </div>
+        <button 
+          onClick={(e) => {
+            const banner = e.currentTarget.parentElement;
+            if (banner) banner.style.display = 'none';
+          }}
+          className="p-1 hover:bg-white/10 rounded-full transition-colors"
+        >
+          <X className="w-4 h-4 text-white/70" />
+        </button>
+      </div>
 
-      {/* Manual Add Table button overlay in Schema View */}
-      <div className="absolute top-4 left-4">
-          {/* This is a visual aid for the demo */}
+      <div className="flex-1 bg-neutral-50 dark:bg-[#0A0A0A] relative overflow-hidden pattern-dots text-neutral-200 dark:text-neutral-900">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeDragStop={onNodeDragStop}
+          nodeTypes={nodeTypes}
+          fitView
+        >
+          <Background />
+          <Controls />
+        </ReactFlow>
       </div>
     </div>
   );

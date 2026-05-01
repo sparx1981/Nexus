@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Table, Relationship } from '../types';
 import { db } from '../lib/firebase';
-import { doc, setDoc, deleteDoc, updateDoc, collection, addDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, updateDoc, collection, addDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useAuthStore } from './authStore';
 
 interface SchemaStore {
@@ -18,6 +18,7 @@ interface SchemaStore {
   setTables: (tables: Table[]) => void;
   setRelationships: (rels: Relationship[]) => void;
   setSelectedTableId: (id: string | null) => void;
+  loadTables: () => () => void;
 }
 
 export const useSchemaStore = create<SchemaStore>((set, get) => ({
@@ -28,6 +29,24 @@ export const useSchemaStore = create<SchemaStore>((set, get) => ({
   setTables: (tables) => set({ tables }),
   setRelationships: (relationships) => set({ relationships }),
   setSelectedTableId: (selectedTableId) => set({ selectedTableId }),
+  loadTables: () => {
+    const wsId = useAuthStore.getState().selectedProjectId || 'default';
+    
+    const unsubscribe = onSnapshot(collection(db, 'workspaces', wsId, 'tables'), (snapshot) => {
+      const tablesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Table));
+      set({ tables: tablesData });
+    });
+
+    const unsubscribeRels = onSnapshot(collection(db, 'workspaces', wsId, 'relationships'), (snapshot) => {
+      const relsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Relationship));
+      set({ relationships: relsData });
+    });
+
+    return () => {
+        unsubscribe();
+        unsubscribeRels();
+    };
+  },
   addTable: async (table) => {
     const wsId = useAuthStore.getState().selectedProjectId;
     if (!wsId) return;
@@ -93,8 +112,23 @@ export const useSchemaStore = create<SchemaStore>((set, get) => ({
     const relRef = doc(db, 'workspaces', wsId, 'relationships', rel.id);
     await setDoc(relRef, rel);
   },
-  updateNodePosition: (id, position) => set((state) => ({
-    nodePositions: { ...state.nodePositions, [id]: position }
-  })),
+  updateNodePosition: async (id: string, position: { x: number; y: number }) => {
+    const wsId = useAuthStore.getState().selectedProjectId;
+    
+    // In-memory update
+    set((state) => ({
+      nodePositions: { ...state.nodePositions, [id]: position }
+    }));
+
+    // Firestore persistence
+    if (wsId) {
+        const tableRef = doc(db, 'workspaces', wsId, 'tables', id);
+        try {
+            await updateDoc(tableRef, { position });
+        } catch (e) {
+            console.error('Failed to persist node position:', e);
+        }
+    }
+  },
 }));
 

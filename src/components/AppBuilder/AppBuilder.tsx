@@ -87,7 +87,7 @@ const CHART_DATA = [
     { name: 'Apr', value: 800 },
 ];
 
-export function AppBuilder() {
+export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: string | null) => void }) {
     const [viewMode, setViewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
     const [showPreview, setShowPreview] = useState(false);
@@ -113,6 +113,10 @@ export function AppBuilder() {
         redo,
         setComponents
     } = useBuilderStore();
+
+    useEffect(() => {
+        if (onEditingAppChange) onEditingAppChange(currentAppId);
+    }, [currentAppId, onEditingAppChange]);
 
     const { tables } = useSchemaStore();
 

@@ -19,7 +19,7 @@ export function useSyncDashboards() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const dashboards = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...(doc.data() as object)
       })) as any[];
       
       console.log(`useSyncDashboards: Received ${dashboards.length} dashboards`);

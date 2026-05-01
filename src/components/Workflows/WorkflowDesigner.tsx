@@ -130,6 +130,7 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
 
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
 
     const onConnect = (params: Connection) => {
         setEdges((eds) => addEdge({
@@ -139,6 +140,43 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
             markerEnd: { type: MarkerType.ArrowClosed, color: '#1A56DB' },
         }, eds));
     };
+
+    const onDragOver = useCallback((event: any) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    }, []);
+
+    const onDrop = useCallback(
+        (event: any) => {
+            event.preventDefault();
+
+            const type = event.dataTransfer.getData('application/reactflow/type');
+            const category = event.dataTransfer.getData('application/reactflow/category');
+
+            if (typeof type === 'undefined' || !type) {
+                return;
+            }
+
+            const position = reactFlowInstance.screenToFlowPosition({
+                x: event.clientX,
+                y: event.clientY,
+            });
+
+            const newNode = {
+                id: `node_${Date.now()}`,
+                type: 'workflow',
+                position,
+                data: { 
+                    category, 
+                    type, 
+                    description: (NODE_TYPES_CONFIG as any)[category][type].label 
+                },
+            };
+
+            setNodes((nds) => nds.concat(newNode));
+        },
+        [reactFlowInstance, setNodes]
+    );
 
     const showToast = (message: string) => {
         setToast(message);
@@ -201,13 +239,14 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                 </aside>
 
                 {/* React Flow Canvas */}
-                <div className="flex-1 relative pattern-grid dark:bg-slate-950">
+                <div className="flex-1 relative pattern-grid dark:bg-slate-950" onDrop={onDrop} onDragOver={onDragOver}>
                     <ReactFlow
                         nodes={nodes}
                         edges={edges}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
                         onConnect={onConnect}
+                        onInit={setReactFlowInstance}
                         nodeTypes={nodeTypes}
                         onNodeClick={(_, node) => setSelectedNodeId(node.id)}
                         onPaneClick={() => setSelectedNodeId(null)}
@@ -250,13 +289,15 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                                         {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </select>
                                 </div>
-                            )}
-
-                            {selectedNode.data.type === 'send_email' && (
+                            )}                             {selectedNode.data.type === 'send_email' && (
                                 <>
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Recipient</label>
                                         <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="email@example.com" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">CC</label>
+                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="manager@example.com" />
                                     </div>
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Subject</label>
@@ -264,7 +305,15 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                                     </div>
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Body</label>
-                                        <textarea className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none h-32 resize-none text-neutral-900 dark:text-white" placeholder="Hello there..." />
+                                        <textarea className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none h-24 resize-none text-neutral-900 dark:text-white" placeholder="Hello there..." />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Attachment</label>
+                                        <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
+                                            <option value="">None</option>
+                                            <option value="report">Weekly_Report.pdf</option>
+                                            <option value="invoice">Invoice_Draft.pdf</option>
+                                        </select>
                                     </div>
                                 </>
                             )}
@@ -309,6 +358,13 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
 
 function PaletteCategory({ title, category }: { title: string, category: string }) {
     const items = (NODE_TYPES_CONFIG as any)[category];
+    
+    const onDragStart = (event: any, nodeType: string, nodeCategory: string) => {
+        event.dataTransfer.setData('application/reactflow/type', nodeType);
+        event.dataTransfer.setData('application/reactflow/category', nodeCategory);
+        event.dataTransfer.effectAllowed = 'move';
+    };
+
     return (
         <section>
             <h4 className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest mb-3">{title}</h4>
@@ -316,6 +372,8 @@ function PaletteCategory({ title, category }: { title: string, category: string 
                 {Object.entries(items).map(([type, config]: [string, any]) => (
                     <div 
                         key={type}
+                        draggable
+                        onDragStart={(event) => onDragStart(event, type, category)}
                         className="flex items-center gap-3 p-3 bg-neutral-50 dark:bg-slate-800 border border-neutral-100 dark:border-slate-700 rounded-xl hover:border-primary-600 dark:hover:border-primary-500 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all group"
                     >
                         <div className={cn("p-1.5 rounded-lg text-white", config.color)}>
