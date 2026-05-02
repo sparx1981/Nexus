@@ -21,7 +21,8 @@ export const DashboardList = ({ dashboards, onSelect, onCreate, onDelete }: Dash
                     </div>
                     <button 
                         onClick={onCreate}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 text-white rounded-xl font-bold shadow-lg shadow-primary-200 hover:bg-primary-700 transition-all active:scale-95"
+                        className="flex items-center gap-2 px-6 py-2.5 text-neutral-500 dark:text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-primary-200/20"
+                        style={{ background: 'var(--project-btn-standard)' }}
                     >
                         <Plus className="w-5 h-5" />
                         Create Dashboard

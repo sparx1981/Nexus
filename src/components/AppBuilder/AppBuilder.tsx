@@ -37,8 +37,10 @@ import {
     PanelRightOpen,
     Maximize,
     Rows,
-    AlignJustify
+    AlignJustify,
+    RotateCcw
 } from 'lucide-react';
+import { useProjectSettingsStore } from '../../store/projectSettingsStore';
 import { 
     DndContext, 
     DragOverlay, 
@@ -285,6 +287,25 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         }
     };
 
+    const { settings: ps } = useProjectSettingsStore();
+    const { isAuthenticated } = useAuthStore();
+
+    if (ps.requireSignIn && !isAuthenticated) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-neutral-50 dark:bg-slate-900">
+                <div className="text-center p-12 bg-white dark:bg-slate-800 rounded-3xl shadow-xl max-w-sm border border-neutral-100 dark:border-slate-700">
+                    <Database className="w-12 h-12 text-primary-600 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold text-neutral-900 dark:text-white mb-2">Protected Resource</h2>
+                    <p className="text-sm text-neutral-500 mb-6">This application requires a Nexus account to access. Please sign in to continue.</p>
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="w-full bg-primary-600 text-white py-3 rounded-xl font-bold hover:bg-primary-700 transition-all"
+                    >Sign In</button>
+                </div>
+            </div>
+        );
+    }
+
     if (!currentAppId) {
         return <ApplicationsView onSelectApp={(id) => setCurrentAppId(id)} />;
     }
@@ -330,7 +351,7 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                             </button>
                             <div className="h-6 w-[1px] bg-neutral-200 dark:bg-slate-800"></div>
                             <div className="flex items-center gap-1 bg-neutral-100 dark:bg-slate-800 p-1 rounded-lg">
-                                <ViewToggle active={viewMode === 'desktop'} onClick={() => setViewMode('desktop')} icon={<Monitor className="w-4 h-4" />} title="Desktop (1440px)" />
+                                <ViewToggle active={viewMode === 'desktop'} onClick={() => setViewMode('desktop')} icon={<Monitor className="w-4 h-4" />} title="Desktop (Responsive)" />
                                 <ViewToggle active={viewMode === 'tablet'} onClick={() => setViewMode('tablet')} icon={<Tablet className="w-4 h-4" />} title="Tablet (768px)" />
                                 <ViewToggle active={viewMode === 'mobile'} onClick={() => setViewMode('mobile')} icon={<Smartphone className="w-4 h-4" />} title="Mobile (375px)" />
                                 <ViewToggle active={viewMode === 'custom'} onClick={() => setViewMode('custom')} icon={<Maximize className="w-4 h-4" />} title="Custom Size" />
@@ -438,11 +459,15 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                             </button>
                         </div>
                         <div className="flex-1 overflow-auto p-8 transition-colors duration-300" style={{ background: 'var(--bg-primary)' }}>
-                             <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" style={{ background: currentAppData?.bgColor || 'var(--bg-surface)', borderColor: 'var(--border-color)', minHeight: 800 }}>
-                                 {currentAppData?.headerText && (
+                             <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" 
+                                  style={{ background: currentAppData?.bgColor || ps.applicationBackgroundColour || 'var(--bg-surface)', borderColor: 'var(--border-color)', minHeight: 800 }}>
+                                 {(currentAppData?.showHeading ?? ps.enableApplicationHeadings) && (
                                      <div className="w-full px-6 py-3 flex items-center shrink-0"
-                                          style={{ background: currentAppData?.headerColor || 'var(--color-primary)' }}>
-                                         <span className="font-bold text-white text-sm">{currentAppData.headerText}</span>
+                                          style={{ 
+                                              height: currentAppData?.headerHeight || ps.headingHeight || 48,
+                                              background: currentAppData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)' 
+                                          }}>
+                                         <span className="font-bold text-white text-sm">{currentAppData?.headerText || ps.headingText}</span>
                                      </div>
                                  )}
                                  {components.length === 0 ? (
@@ -523,174 +548,184 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                 </div>
             )}
 
-            {showAppSettings && (
+            {showAppSettings && (() => {
+                const { settings: ps } = useProjectSettingsStore.getState();
+                const hasCustomBg = currentAppData?.bgColor && currentAppData.bgColor !== ps.applicationBackgroundColour;
+                const hasCustomHeader = currentAppData?.headerText && currentAppData.headerText !== ps.headingText;
+                const hasCustomHeaderColor = currentAppData?.headerColor && currentAppData.headerColor !== ps.headingBackgroundColour;
+
+                return (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm shadow-2xl" onClick={() => setShowAppSettings(false)}></div>
-                    <div className="relative bg-white dark:bg-[#1E293B] rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        <div className="px-8 py-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-800/10">
+                    <div className="relative bg-white dark:bg-[#1E293B] rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-8 py-5 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-800/10">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center">
-                                    <Settings2 className="w-6 h-6" />
+                                    <Settings2 className="w-5 h-5" />
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-neutral-900 dark:text-white">Application Settings</h3>
-                                    <p className="text-xs text-neutral-500">Configure global parameters and data links.</p>
+                                    <p className="text-xs text-neutral-500">Configure this application — overrides inherit from Project Settings.</p>
                                 </div>
                             </div>
                             <button onClick={() => setShowAppSettings(false)} className="p-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-full transition-colors">
                                 <X className="w-5 h-5 text-neutral-500" />
                             </button>
                         </div>
-                        <div className="p-8 space-y-6 max-h-[60vh] overflow-y-auto">
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Application Name</label>
-                                <input 
-                                    type="text" 
-                                    value={currentAppData?.name || ''}
-                                    onChange={(e) => handleUpdateAppSettings({ name: e.target.value })}
-                                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white transition-all shadow-sm"
-                                />
-                            </div>
 
-                            {/* Background colour */}
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Background Colour</label>
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="color"
-                                        value={currentAppData?.bgColor || '#ffffff'}
-                                        onChange={(e) => handleUpdateAppSettings({ bgColor: e.target.value })}
-                                        className="w-10 h-10 rounded-lg border border-neutral-200 dark:border-neutral-800 cursor-pointer p-0.5 bg-transparent"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={currentAppData?.bgColor || ''}
-                                        onChange={(e) => handleUpdateAppSettings({ bgColor: e.target.value })}
-                                        placeholder="#ffffff or transparent"
-                                        className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white"
-                                    />
-                                    {currentAppData?.bgColor && (
-                                        <button onClick={() => handleUpdateAppSettings({ bgColor: '' })} className="text-neutral-300 hover:text-rose-500 transition-colors text-xs">✕</button>
+                        <div className="p-8 max-h-[75vh] overflow-y-auto">
+                            <div className="grid grid-cols-2 gap-8">
+                                {/* ── Column 1 ── */}
+                                <div className="space-y-5">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 dark:text-neutral-500 border-b border-neutral-100 dark:border-neutral-800 pb-2">Identity & Appearance</p>
+
+                                    {/* Application Name */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Application Name</label>
+                                        <input type="text" value={currentAppData?.name || ''}
+                                            onChange={(e) => handleUpdateAppSettings({ name: e.target.value })}
+                                            className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white transition-all" />
+                                    </div>
+
+                                    {/* App Header Text */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">App Header Text</label>
+                                            {hasCustomHeader && (
+                                                <button onClick={() => handleUpdateAppSettings({ headerText: ps.headingText })} className="text-[9px] font-bold flex items-center gap-0.5 text-amber-500 hover:text-amber-600">
+                                                    <RotateCcw className="w-2.5 h-2.5" /> Reset
+                                                </button>
+                                            )}
+                                        </div>
+                                        <input type="text" value={currentAppData?.headerText || ''}
+                                            onChange={(e) => handleUpdateAppSettings({ headerText: e.target.value })}
+                                            placeholder={ps.headingText || 'Leave blank to hide header'}
+                                            className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white transition-all" />
+                                    </div>
+
+                                    {/* Background Colour */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Background Colour</label>
+                                            {hasCustomBg && (
+                                                <button onClick={() => handleUpdateAppSettings({ bgColor: ps.applicationBackgroundColour })} className="text-[9px] font-bold flex items-center gap-0.5 text-amber-500 hover:text-amber-600">
+                                                    <RotateCcw className="w-2.5 h-2.5" /> Reset
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <input type="color" value={currentAppData?.bgColor || ps.applicationBackgroundColour}
+                                                onChange={(e) => handleUpdateAppSettings({ bgColor: e.target.value })}
+                                                className="w-9 h-9 rounded-lg border border-neutral-200 dark:border-neutral-800 cursor-pointer p-0.5 bg-transparent" />
+                                            <input type="text" value={currentAppData?.bgColor || ''}
+                                                onChange={(e) => handleUpdateAppSettings({ bgColor: e.target.value })}
+                                                placeholder={ps.applicationBackgroundColour}
+                                                className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white" />
+                                        </div>
+                                        {!hasCustomBg && <p className="text-[9px] text-neutral-400 italic">Using Project Setting default</p>}
+                                    </div>
+
+                                    {/* Header Background Colour */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Header Background Colour</label>
+                                            {hasCustomHeaderColor && (
+                                                <button onClick={() => handleUpdateAppSettings({ headerColor: ps.headingBackgroundColour })} className="text-[9px] font-bold flex items-center gap-0.5 text-amber-500 hover:text-amber-600">
+                                                    <RotateCcw className="w-2.5 h-2.5" /> Reset
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <input type="color" value={currentAppData?.headerColor || ps.headingBackgroundColour}
+                                                onChange={(e) => handleUpdateAppSettings({ headerColor: e.target.value })}
+                                                className="w-9 h-9 rounded-lg border border-neutral-200 dark:border-neutral-800 cursor-pointer p-0.5 bg-transparent" />
+                                            <input type="text" value={currentAppData?.headerColor || ''}
+                                                onChange={(e) => handleUpdateAppSettings({ headerColor: e.target.value })}
+                                                placeholder={ps.headingBackgroundColour}
+                                                className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white" />
+                                        </div>
+                                        {!hasCustomHeaderColor && <p className="text-[9px] text-neutral-400 italic">Using Project Setting default</p>}
+                                    </div>
+                                </div>
+
+                                {/* ── Column 2 ── */}
+                                <div className="space-y-5">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 dark:text-neutral-500 border-b border-neutral-100 dark:border-neutral-800 pb-2">Data & Operation</p>
+
+                                    {/* Data Connectivity */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Data Connectivity</label>
+                                        <button onClick={() => setShowManageDatasources(true)}
+                                            className="w-full flex items-center justify-between px-4 py-3 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold hover:border-primary-600 transition-all dark:text-white group text-left">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-white dark:bg-[#1E293B] rounded-lg shadow-sm border border-neutral-100 dark:border-neutral-800 group-hover:scale-110 transition-transform">
+                                                    <Database className="w-4 h-4 text-primary-600" />
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs">Manage Application Datasources</div>
+                                                    <div className="text-[10px] text-neutral-400 font-medium">Using {usedDatasources.length} table{usedDatasources.length !== 1 ? 's' : ''}</div>
+                                                </div>
+                                            </div>
+                                            <ChevronRight className="w-4 h-4 text-neutral-300" />
+                                        </button>
+                                    </div>
+
+                                    {/* Operation Mode */}
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Operation Mode</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {[
+                                                { id: 'view_only', label: 'View Only' },
+                                                { id: 'add', label: 'Add Records' },
+                                                { id: 'update', label: 'Update Records' },
+                                                { id: 'delete', label: 'Delete Records' },
+                                            ].map(mode => (
+                                                <button key={mode.id} type="button" onClick={() => handleUpdateAppSettings({ mode: mode.id })}
+                                                    className={cn("p-2.5 rounded-xl border-2 text-[10px] font-bold transition-all",
+                                                        currentAppData?.mode === mode.id
+                                                            ? "bg-primary-600 border-primary-600 text-white shadow-lg shadow-primary-200/50"
+                                                            : "bg-white dark:bg-[#0F172A] border-neutral-100 dark:border-neutral-800 text-neutral-400")}>
+                                                    {mode.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Key Fields */}
+                                    {currentAppData?.dataSourceId && (
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Key Fields (for matching)</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {tables.find(t => t.id === currentAppData.dataSourceId)?.fields.map(f => (
+                                                    <button key={f.id} type="button"
+                                                        onClick={() => {
+                                                            const keys = currentAppData.keyFields || [];
+                                                            handleUpdateAppSettings({ keyFields: keys.includes(f.id) ? keys.filter((id: string) => id !== f.id) : [...keys, f.id] });
+                                                        }}
+                                                        className={cn("px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all",
+                                                            (currentAppData.keyFields || []).includes(f.id)
+                                                                ? "bg-primary-600 border-primary-600 text-white"
+                                                                : "bg-neutral-50 dark:bg-[#0F172A] border-neutral-200 dark:border-neutral-800 text-neutral-500")}>
+                                                        {f.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
                             </div>
 
-                            {/* App Header */}
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">App Header Text</label>
-                                <input
-                                    type="text"
-                                    value={currentAppData?.headerText || ''}
-                                    onChange={(e) => handleUpdateAppSettings({ headerText: e.target.value })}
-                                    placeholder="Leave blank to hide header"
-                                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white transition-all shadow-sm"
-                                />
-                            </div>
-                            {currentAppData?.headerText && (
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Header Background Colour</label>
-                                    <div className="flex items-center gap-3">
-                                        <input
-                                            type="color"
-                                            value={currentAppData?.headerColor || '#1A56DB'}
-                                            onChange={(e) => handleUpdateAppSettings({ headerColor: e.target.value })}
-                                            className="w-10 h-10 rounded-lg border border-neutral-200 dark:border-neutral-800 cursor-pointer p-0.5 bg-transparent"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={currentAppData?.headerColor || ''}
-                                            onChange={(e) => handleUpdateAppSettings({ headerColor: e.target.value })}
-                                            placeholder="#1A56DB"
-                                            className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                            
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Data Connectivity</label>
-                                <button 
-                                    onClick={() => setShowManageDatasources(true)}
-                                    className="w-full flex items-center justify-between px-4 py-3 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold hover:border-primary-600 transition-all dark:text-white group text-left"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-white dark:bg-[#1E293B] rounded-lg shadow-sm border border-neutral-100 dark:border-neutral-800 group-hover:scale-110 transition-transform">
-                                            <Database className="w-4 h-4 text-primary-600" />
-                                        </div>
-                                        <div>
-                                            <div className="text-xs">Manage Application Datasources</div>
-                                            <div className="text-[10px] text-neutral-400 font-medium">Currently using {usedDatasources.length} tables</div>
-                                        </div>
-                                    </div>
-                                    <ChevronRight className="w-4 h-4 text-neutral-300" />
+                            <div className="pt-6 mt-6 border-t border-neutral-100 dark:border-neutral-800 flex justify-end">
+                                <button onClick={() => setShowAppSettings(false)}
+                                    className="px-10 py-3 bg-neutral-900 dark:bg-primary-600 text-white font-bold rounded-2xl hover:bg-neutral-800 dark:hover:bg-primary-500 transition-all active:scale-95 shadow-lg">
+                                    Save & Close
                                 </button>
-                            </div>
-                            
-                            <div className="space-y-4">
-                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Operation Mode</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {[
-                                        { id: 'view_only', label: 'View Only' },
-                                        { id: 'add', label: 'Add Records' },
-                                        { id: 'update', label: 'Update Records' },
-                                        { id: 'delete', label: 'Delete Records' },
-                                    ].map(mode => (
-                                        <button
-                                            key={mode.id}
-                                            type="button"
-                                            onClick={() => handleUpdateAppSettings({ mode: mode.id })}
-                                            className={cn(
-                                                "p-2.5 rounded-xl border-2 text-[10px] font-bold transition-all",
-                                                currentAppData?.mode === mode.id 
-                                                    ? "bg-primary-600 border-primary-600 text-white shadow-lg shadow-primary-200/50" 
-                                                    : "bg-white dark:bg-[#0F172A] border-neutral-100 dark:border-neutral-800 text-neutral-400"
-                                            )}
-                                        >
-                                            {mode.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {currentAppData?.dataSourceId && (
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest leading-none">Key Fields (for matching)</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {tables.find(t => t.id === currentAppData.dataSourceId)?.fields.map(f => (
-                                            <button
-                                                key={f.id}
-                                                type="button"
-                                                onClick={() => {
-                                                    const keys = currentAppData.keyFields || [];
-                                                    const newKeys = keys.includes(f.id) 
-                                                        ? keys.filter((id: string) => id !== f.id)
-                                                        : [...keys, f.id];
-                                                    handleUpdateAppSettings({ keyFields: newKeys });
-                                                }}
-                                                className={cn(
-                                                    "px-3 py-1.5 rounded-lg border text-[10px] font-bold transition-all",
-                                                    (currentAppData.keyFields || []).includes(f.id)
-                                                        ? "bg-primary-600 border-primary-600 text-white"
-                                                        : "bg-neutral-50 dark:bg-[#0F172A] border-neutral-200 dark:border-neutral-800 text-neutral-500"
-                                                )}
-                                            >
-                                                {f.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="pt-4 flex justify-end">
-                                <button 
-                                    onClick={() => setShowAppSettings(false)}
-                                    className="w-full py-4 bg-neutral-900 dark:bg-primary-600 text-white font-bold rounded-2xl hover:bg-neutral-800 dark:hover:bg-primary-500 transition-all active:scale-95 shadow-xl shadow-neutral-200/50 dark:shadow-primary-900/20"
-                                >Save & Close</button>
                             </div>
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
 
             {showManageDatasources && (
                 <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
@@ -881,6 +916,7 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
 
 function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?: any, customWidth?: number }) {
     const { components, selectedId, selectComponent, moveComponent, updateComponentSize } = useBuilderStore();
+    const { settings: ps } = useProjectSettingsStore();
     const { isOver, setNodeRef } = useDroppable({
         id: 'canvas-dropzone'
     });
@@ -929,14 +965,14 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
             ref={setNodeRef}
             className={cn(
                 "shadow-2xl transition-all duration-300 min-h-[800px] border relative overflow-hidden",
-                viewMode === 'desktop' && "w-[1440px] max-w-full",
+                viewMode === 'desktop' && "w-full",
                 viewMode === 'tablet' && "w-[768px]",
                 viewMode === 'mobile' && "w-[375px]",
                 viewMode === 'custom' ? "" : "",
                 isOver ? "border-primary-600" : ""
             )}
             style={{
-                background: isOver ? undefined : (appData?.bgColor || 'var(--bg-surface)'),
+                background: isOver ? undefined : (appData?.bgColor || ps.applicationBackgroundColour || 'var(--bg-surface)'),
                 borderColor: isOver ? undefined : 'var(--border-color)',
                 ...(viewMode === 'custom' ? { width: customWidth } : {}),
             }}
@@ -945,12 +981,15 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
             }}
         >
             {/* App Header band */}
-            {appData?.headerText && (
+            {(appData?.showHeading ?? ps.enableApplicationHeadings) && (
                 <div
                     className="w-full px-6 py-3 flex items-center shrink-0 select-none"
-                    style={{ background: appData?.headerColor || 'var(--color-primary)' }}
+                    style={{ 
+                        height: appData?.headerHeight || ps.headingHeight || 48,
+                        background: appData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)' 
+                    }}
                 >
-                    <span className="font-bold text-white text-sm">{appData.headerText}</span>
+                    <span className="font-bold text-white text-sm">{appData?.headerText || ps.headingText}</span>
                 </div>
             )}
 
@@ -1061,6 +1100,7 @@ function RenderComponent({
 }) {
     const { type, properties, size } = component;
     const { selectedProjectId } = useAuthStore();
+    const { settings: ps } = useProjectSettingsStore();
 
     switch (type) {
         case 'heading':
@@ -1149,18 +1189,45 @@ function RenderComponent({
                     onClick={handleClick}
                     style={properties.style === 'custom' ? {
                         width: '100%', height: '100%',
-                        backgroundColor: properties.customBg || '#334155',
+                        backgroundColor: properties.customBg || ps.buttonColourStandard || '#334155',
                         color: properties.customText || '#ffffff',
-                        '--btn-hover-bg': properties.customHoverBg || properties.customBg || '#1e293b',
-                        '--btn-active-bg': properties.customActiveBg || properties.customBg || '#0f172a',
-                    } as any : { width: '100%', height: '100%' }}
-                    onMouseEnter={(e) => { if (properties.style === 'custom' && properties.customHoverBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg; }}
-                    onMouseLeave={(e) => { if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155'; }}
-                    onMouseDown={(e) => { if (properties.style === 'custom' && properties.customActiveBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customActiveBg; }}
-                    onMouseUp={(e) => { if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155'; }}
+                        '--btn-hover-bg': properties.customHoverBg || ps.buttonColourHover || '#1e293b',
+                        '--btn-active-bg': properties.customActiveBg || ps.buttonColourClicked || '#0f172a',
+                    } as any : (properties.style === 'primary' ? {
+                        width: '100%', height: '100%',
+                        backgroundColor: ps.buttonColourStandard || '',
+                    } : { width: '100%', height: '100%' })}
+                    onMouseEnter={(e) => { 
+                        if (properties.style === 'custom') {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg || ps.buttonColourHover || '#1e293b'; 
+                        } else if (properties.style === 'primary' && ps.buttonColourHover) {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourHover;
+                        }
+                    }}
+                    onMouseLeave={(e) => { 
+                        if (properties.style === 'custom') {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || ps.buttonColourStandard || '#334155'; 
+                        } else if (properties.style === 'primary') {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourStandard || '';
+                        }
+                    }}
+                    onMouseDown={(e) => { 
+                        if (properties.style === 'custom') {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customActiveBg || ps.buttonColourClicked || '#0f172a'; 
+                        } else if (properties.style === 'primary' && ps.buttonColourClicked) {
+                             (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourClicked;
+                        }
+                    }}
+                    onMouseUp={(e) => { 
+                        if (properties.style === 'custom') {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg || ps.buttonColourHover || '#1e293b'; 
+                        } else if (properties.style === 'primary' && ps.buttonColourHover) {
+                            (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourHover;
+                        }
+                    }}
                     className={cn(
                         "rounded-xl font-bold transition-all shadow-md active:scale-95",
-                        properties.style === 'primary' ? "bg-primary-600 text-white hover:bg-primary-700 shadow-primary-200" :
+                        properties.style === 'primary' ? "text-white shadow-primary-200" :
                         properties.style === 'secondary' ? "bg-white border-2 border-neutral-200 text-neutral-700 hover:bg-neutral-50 shadow-neutral-100 dark:bg-[#1A1A1A] dark:border-neutral-800 dark:text-neutral-300" :
                         properties.style === 'custom' ? "" :
                         "bg-error-600 text-white hover:bg-error-700 shadow-error-200"
@@ -1338,59 +1405,7 @@ function RenderComponent({
             );
 
         case 'table': {
-            const tableButtons: any[] = properties.rowButtons || [];
-            const startBtns = tableButtons.filter(b => b.position === 'start');
-            const endBtns = tableButtons.filter(b => b.position === 'end');
-            return (
-                <div className="w-full h-full border rounded-xl overflow-hidden shadow-sm flex flex-col" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
-                    <div className="border-b px-4 py-2 flex items-center justify-between shrink-0" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
-                        <span className="text-[10px] font-black uppercase flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                            <Database className="w-3 h-3 text-primary-600" />
-                            {properties.dataSource || 'No Data Source'}
-                        </span>
-                    </div>
-                    <div className="flex-1 overflow-auto">
-                      <table className="w-full text-[11px]">
-                          <thead className="sticky top-0" style={{ background: 'var(--bg-primary)' }}>
-                              <tr>
-                                  {startBtns.length > 0 && <th className="px-3 py-2 w-px" />}
-                                  <th className="px-4 py-2 text-left font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Field A</th>
-                                  <th className="px-4 py-2 text-left font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Field B</th>
-                                  {endBtns.length > 0 && <th className="px-3 py-2 w-px" />}
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y font-medium" style={{ borderColor: 'var(--border-color)' }}>
-                              {[1, 2, 3, 4, 5].map(i => (
-                                  <tr key={i}>
-                                      {startBtns.length > 0 && (
-                                          <td className="px-2 py-1.5">
-                                              <div className="flex gap-1">
-                                                  {startBtns.map((btn, bi) => (
-                                                      <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
-                                                          style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
-                                                  ))}
-                                              </div>
-                                          </td>
-                                      )}
-                                      <td className="px-4 py-2 italic" style={{ color: 'var(--text-secondary)' }}>Row {i}</td>
-                                      <td className="px-4 py-2 italic" style={{ color: 'var(--text-secondary)' }}>...</td>
-                                      {endBtns.length > 0 && (
-                                          <td className="px-2 py-1.5">
-                                              <div className="flex gap-1 justify-end">
-                                                  {endBtns.map((btn, bi) => (
-                                                      <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
-                                                          style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
-                                                  ))}
-                                              </div>
-                                          </td>
-                                      )}
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
-                    </div>
-                </div>
-            );
+            return <DataTableComponent component={component} properties={properties} appContext={appContext} preview={preview} />;
         }
 
         case 'bar_chart': {
@@ -1520,6 +1535,153 @@ function RenderComponent({
                 </div>
             );
     }
+}
+
+// ─── Live Data Table Component ───────────────────────────────────────────────
+function DataTableComponent({ component, properties, appContext, preview }: { component: any; properties: any; appContext?: any; preview?: boolean }) {
+    const { tables } = useSchemaStore();
+    const { selectedProjectId } = useAuthStore();
+    const [rows, setRows] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+
+    // Determine the data source: component-level override or app-level
+    const dataSourceId = properties.dataSource || appContext?.dataSourceId || '';
+    const sourceTable = tables.find(t => t.id === dataSourceId);
+
+    // Visible fields: filtered selection or all table fields
+    const allFields = sourceTable?.fields || [];
+    const visibleFieldIds: string[] = properties.visibleFields?.length ? properties.visibleFields : allFields.map((f: any) => f.id);
+    const visibleFields = allFields.filter((f: any) => visibleFieldIds.includes(f.id));
+
+    // Component-level filter rules
+    const filterRules: { field: string; op: string; value: string }[] = properties.tableFilters || [];
+
+    useEffect(() => {
+        if (!dataSourceId || !selectedProjectId) return;
+        setLoading(true);
+        const unsubFn = onSnapshot(
+            query(collection(db, 'workspaces', selectedProjectId, 'tableData', dataSourceId, 'rows')),
+            (snap: any) => {
+                setRows(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+                setLoading(false);
+            },
+            () => setLoading(false)
+        );
+        return () => unsubFn();
+    }, [dataSourceId, selectedProjectId]);
+
+    // Apply filters
+    const filteredRows = rows.filter((row: any) => {
+        // Component-level static filters
+        const passStatic = filterRules.every((r: any) => {
+            if (!r.field || !r.value) return true;
+            const cell = String(row[r.field] ?? '');
+            if (r.op === '==') return cell === r.value;
+            if (r.op === 'contains') return cell.toLowerCase().includes(String(r.value).toLowerCase());
+            if (r.op === '>') return parseFloat(cell) > parseFloat(r.value);
+            if (r.op === '<') return parseFloat(cell) < parseFloat(r.value);
+            return true;
+        });
+        // Runtime search filters
+        const passRuntime = Object.entries(filterValues).every(([field, val]) =>
+            !val || String(row[field] ?? '').toLowerCase().includes(String(val).toLowerCase())
+        );
+        return passStatic && passRuntime;
+    });
+
+    const tableButtons: any[] = properties.rowButtons || [];
+    const startBtns = tableButtons.filter((b: any) => b.position === 'start');
+    const endBtns = tableButtons.filter((b: any) => b.position === 'end');
+
+    if (!dataSourceId || !sourceTable) {
+        return (
+            <div className="w-full h-full border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 text-center p-4" style={{ borderColor: 'var(--border-color)' }}>
+                <Database className="w-8 h-8 opacity-20" style={{ color: 'var(--text-secondary)' }} />
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>No Data Source Selected</p>
+                <p className="text-[9px]" style={{ color: 'var(--text-secondary)' }}>Set a datasource in App Settings</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full h-full border rounded-xl overflow-hidden shadow-sm flex flex-col" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+            <div className="border-b px-4 py-2 flex items-center justify-between shrink-0 gap-2" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                <span className="text-[10px] font-black uppercase flex items-center gap-1.5 shrink-0" style={{ color: 'var(--text-secondary)' }}>
+                    <Database className="w-3 h-3" style={{ color: 'var(--color-primary)' }} />
+                    {sourceTable.name}
+                    <span className="font-normal opacity-60">({filteredRows.length} rows)</span>
+                </span>
+                {/* Runtime search per visible field */}
+                {preview && properties.enableSearch && (
+                    <input
+                        placeholder="Search…"
+                        onChange={(e) => {
+                            const v = e.target.value;
+                            const m: Record<string, string> = {};
+                            visibleFields.forEach((f: any) => { m[f.name] = v; });
+                            setFilterValues(m);
+                        }}
+                        className="text-[11px] px-2 py-1 rounded-lg border outline-none max-w-[160px]"
+                        style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                    />
+                )}
+            </div>
+            <div className="flex-1 overflow-auto">
+                {loading ? (
+                    <div className="flex items-center justify-center h-20 gap-2" style={{ color: 'var(--text-secondary)' }}>
+                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs font-medium">Loading…</span>
+                    </div>
+                ) : (
+                    <table className="w-full text-[11px]">
+                        <thead className="sticky top-0" style={{ background: 'var(--bg-primary)' }}>
+                            <tr>
+                                {startBtns.length > 0 && <th className="px-3 py-2 w-px" />}
+                                {visibleFields.map((f: any) => (
+                                    <th key={f.id} className="px-4 py-2 text-left font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{f.name}</th>
+                                ))}
+                                {endBtns.length > 0 && <th className="px-3 py-2 w-px" />}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y font-medium" style={{ borderColor: 'var(--border-color)' }}>
+                            {filteredRows.length === 0 ? (
+                                <tr><td colSpan={visibleFields.length + startBtns.length + endBtns.length} className="px-4 py-8 text-center text-[10px] uppercase tracking-widest font-bold opacity-40" style={{ color: 'var(--text-secondary)' }}>No records found</td></tr>
+                            ) : filteredRows.map((row, i) => (
+                                <tr key={row.id || i} className="hover:opacity-80 transition-opacity">
+                                    {startBtns.length > 0 && (
+                                        <td className="px-2 py-1.5">
+                                            <div className="flex gap-1">
+                                                {startBtns.map((btn: any, bi: number) => (
+                                                    <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
+                                                        style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
+                                                ))}
+                                            </div>
+                                        </td>
+                                    )}
+                                    {visibleFields.map((f: any) => (
+                                        <td key={f.id} className="px-4 py-2 max-w-[180px] truncate" style={{ color: 'var(--text-primary)' }}>
+                                            {String(row[f.name] ?? '')}
+                                        </td>
+                                    ))}
+                                    {endBtns.length > 0 && (
+                                        <td className="px-2 py-1.5">
+                                            <div className="flex gap-1 justify-end">
+                                                {endBtns.map((btn: any, bi: number) => (
+                                                    <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
+                                                        style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
+                                                ))}
+                                            </div>
+                                        </td>
+                                    )}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </div>
+    );
 }
 
 function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: string, unifiedDatasources: any[] }) {
@@ -1836,50 +1998,133 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                          </>
                      )}
 
-                     {type === 'table' && (
+                     {type === 'table' && (() => {
+                         const selectedDataSourceId = properties.dataSource || dataSourceId || '';
+                         const sourceTable = tables.find(t => t.id === selectedDataSourceId);
+                         const tableFields = sourceTable?.fields || [];
+                         const visibleFieldIds: string[] = properties.visibleFields?.length ? properties.visibleFields : tableFields.map((f: any) => f.id);
+                         const tableFilters: any[] = properties.tableFilters || [];
+
+                         return (
                          <div className="space-y-4">
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Data Source</label>
+                                 <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Data Source</label>
                                  <select 
                                      value={properties.dataSource || ''}
                                      onChange={(e) => handleUpdate('dataSource', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 outline-none dark:text-white"
                                  >
                                      <option value="">Select a datasource...</option>
                                      {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
                                      {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
                                  </select>
                              </div>
+
+                             {/* Field Visibility */}
+                             {tableFields.length > 0 && (
+                                 <div className="space-y-2">
+                                     <div className="flex items-center justify-between">
+                                         <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Visible Fields</label>
+                                         <div className="flex gap-2">
+                                             <button onClick={() => handleUpdate('visibleFields', tableFields.map((f: any) => f.id))} className="text-[9px] font-bold uppercase tracking-wider hover:underline" style={{ color: 'var(--color-primary)' }}>All</button>
+                                             <span className="text-[9px] text-neutral-400">/</span>
+                                             <button onClick={() => handleUpdate('visibleFields', [])} className="text-[9px] font-bold uppercase tracking-wider hover:underline text-neutral-400">None</button>
+                                         </div>
+                                     </div>
+                                     <div className="space-y-1 max-h-36 overflow-y-auto rounded-lg border border-neutral-200 dark:border-slate-700">
+                                         {tableFields.map((f: any) => {
+                                             const isVisible = visibleFieldIds.includes(f.id);
+                                             return (
+                                                 <label key={f.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-neutral-50 dark:hover:bg-slate-800">
+                                                     <input
+                                                         type="checkbox"
+                                                         checked={isVisible}
+                                                         onChange={() => {
+                                                             const next = isVisible
+                                                                 ? visibleFieldIds.filter((id: string) => id !== f.id)
+                                                                 : [...visibleFieldIds, f.id];
+                                                             handleUpdate('visibleFields', next);
+                                                         }}
+                                                         className="w-3.5 h-3.5 rounded"
+                                                         style={{ accentColor: 'var(--color-primary)' }}
+                                                     />
+                                                     <span className="text-xs font-medium dark:text-slate-300 truncate">{f.name}</span>
+                                                 </label>
+                                             );
+                                         })}
+                                     </div>
+                                 </div>
+                             )}
+
+                             {/* Column Filters */}
+                             {tableFields.length > 0 && (
+                                 <div className="space-y-2">
+                                     <div className="flex items-center justify-between">
+                                         <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Filters</label>
+                                         <button
+                                             onClick={() => handleUpdate('tableFilters', [...tableFilters, { field: '', op: 'contains', value: '' }])}
+                                             className="text-[10px] font-bold hover:underline"
+                                             style={{ color: 'var(--color-primary)' }}
+                                         >+ Add Filter</button>
+                                     </div>
+                                     {tableFilters.map((flt: any, fi: number) => (
+                                         <div key={fi} className="p-2 border border-neutral-200 dark:border-slate-700 rounded-lg space-y-1.5 bg-neutral-50 dark:bg-slate-800 relative">
+                                             <button
+                                                 onClick={() => handleUpdate('tableFilters', tableFilters.filter((_: any, i: number) => i !== fi))}
+                                                 className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center text-[9px] leading-none"
+                                             >✕</button>
+                                             <select value={flt.field} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], field: e.target.value }; handleUpdate('tableFilters', nf); }}
+                                                 className="w-full px-2 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                 <option value="">Field…</option>
+                                                 {tableFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
+                                             </select>
+                                             <div className="flex gap-1">
+                                                 <select value={flt.op} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], op: e.target.value }; handleUpdate('tableFilters', nf); }}
+                                                     className="flex-1 px-1 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                     <option value="==">equals</option>
+                                                     <option value="contains">contains</option>
+                                                     <option value=">">greater than</option>
+                                                     <option value="<">less than</option>
+                                                 </select>
+                                                 <input value={flt.value} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], value: e.target.value }; handleUpdate('tableFilters', nf); }}
+                                                     placeholder="value" className="flex-1 px-2 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white" />
+                                             </div>
+                                         </div>
+                                     ))}
+                                 </div>
+                             )}
+
+                             {/* Enable Search */}
+                             <label className="flex items-center gap-2 cursor-pointer">
+                                 <input type="checkbox" checked={!!properties.enableSearch} onChange={(e) => handleUpdate('enableSearch', e.target.checked)}
+                                     className="w-3.5 h-3.5 rounded" style={{ accentColor: 'var(--color-primary)' }} />
+                                 <span className="text-xs font-medium dark:text-slate-300">Enable Search Bar</span>
+                             </label>
+
                              {/* Row Buttons */}
                              <div className="space-y-2">
                                  <div className="flex items-center justify-between">
-                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Row Buttons</label>
+                                     <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Row Buttons</label>
                                      <button
                                          onClick={() => handleUpdate('rowButtons', [...(properties.rowButtons || []), { label: 'Action', position: 'end', color: '#1A56DB' }])}
-                                         className="text-[10px] font-bold text-primary-600 hover:underline"
+                                         className="text-[10px] font-bold hover:underline" style={{ color: 'var(--color-primary)' }}
                                      >+ Add Button</button>
                                  </div>
                                  {(properties.rowButtons || []).map((btn: any, bi: number) => (
-                                     <div key={bi} className="p-2 border border-neutral-200 rounded-lg space-y-2 bg-neutral-50">
+                                     <div key={bi} className="p-2 border border-neutral-200 dark:border-slate-700 rounded-lg space-y-2 bg-neutral-50 dark:bg-slate-800">
                                          <div className="flex gap-1">
-                                             <input
-                                                 placeholder="Label"
-                                                 value={btn.label || ''}
+                                             <input placeholder="Label" value={btn.label || ''}
                                                  onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], label: e.target.value }; handleUpdate('rowButtons', nb); }}
-                                                 className="flex-1 px-2 py-1 text-xs border border-neutral-200 rounded bg-white outline-none"
-                                             />
-                                             <select
-                                                 value={btn.position || 'end'}
+                                                 className="flex-1 px-2 py-1 text-xs border border-neutral-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 outline-none dark:text-white" />
+                                             <select value={btn.position || 'end'}
                                                  onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], position: e.target.value }; handleUpdate('rowButtons', nb); }}
-                                                 className="px-1 py-1 text-xs border border-neutral-200 rounded bg-white outline-none"
-                                             >
+                                                 className="px-1 py-1 text-xs border border-neutral-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 outline-none dark:text-white">
                                                  <option value="start">Start</option>
                                                  <option value="end">End</option>
                                              </select>
                                              <input type="color" value={btn.color || '#1A56DB'}
                                                  onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], color: e.target.value }; handleUpdate('rowButtons', nb); }}
-                                                 className="w-7 h-7 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent"
-                                             />
+                                                 className="w-7 h-7 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent" />
                                              <button onClick={() => handleUpdate('rowButtons', (properties.rowButtons || []).filter((_: any, i: number) => i !== bi))} className="text-rose-400 hover:text-rose-600">
                                                  <Minus className="w-3 h-3" />
                                              </button>
@@ -1888,7 +2133,8 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                                  ))}
                              </div>
                          </div>
-                     )}
+                         );
+                     })()}
 
                      {['bar_chart', 'line_chart', 'pie_chart'].includes(type) && (
                          <div className="space-y-3">

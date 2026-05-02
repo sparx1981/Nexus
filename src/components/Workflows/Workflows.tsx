@@ -107,7 +107,8 @@ export function Workflows() {
         </div>
         <button 
           onClick={() => setShowAddModal(true)}
-          className="bg-primary-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-lg shadow-primary-100 dark:shadow-primary-900/20 transition-all active:scale-95"
+          className="px-4 py-2 text-neutral-500 dark:text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-primary-100 dark:shadow-primary-900/20"
+          style={{ background: 'var(--project-btn-standard)' }}
         >
           <Plus className="w-4 h-4" /> New Workflow
         </button>
@@ -174,7 +175,8 @@ export function Workflows() {
             <p className="text-neutral-500 dark:text-slate-400 max-w-xs mx-auto mb-6">Create automated sequences to handle business logic and data synchronization.</p>
             <button 
               onClick={() => setShowAddModal(true)}
-              className="bg-primary-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-100 dark:shadow-primary-900/20"
+              className="px-6 py-2 text-neutral-500 dark:text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-primary-100 dark:shadow-primary-900/20"
+              style={{ background: 'var(--project-btn-standard)' }}
             >Create First Workflow</button>
           </div>
         )}
@@ -210,7 +212,8 @@ export function Workflows() {
                 >Cancel</button>
                 <button 
                   type="submit"
-                  className="flex-1 py-2.5 bg-primary-600 text-white font-bold rounded-xl shadow-lg shadow-primary-100 dark:shadow-primary-900/20 hover:bg-primary-700 active:scale-95 transition-all"
+                  className="flex-1 py-2.5 text-neutral-500 dark:text-white font-bold rounded-xl shadow-lg shadow-primary-100 dark:shadow-primary-900/20 hover:opacity-90 active:scale-95 transition-all"
+                  style={{ background: 'var(--project-btn-standard)' }}
                 >Create & Open</button>
               </div>
             </form>

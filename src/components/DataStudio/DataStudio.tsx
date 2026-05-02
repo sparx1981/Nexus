@@ -160,7 +160,8 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
         <div className="flex-1"></div>
         <button 
             onClick={() => setShowAddTable(true)}
-            className="bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-opacity-90 shadow-sm transition-all shadow-primary-200/20"
+            className="px-3 py-1.5 text-neutral-500 dark:text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 shadow-sm transition-all shadow-primary-200/20"
+            style={{ background: 'var(--project-btn-standard)' }}
         >
           <Plus className="w-4 h-4" /> New Table
         </button>
@@ -438,7 +439,8 @@ function DataTableView() {
     const [records, setRecords] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     
-    // Field Modal State
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [affectedApps, setAffectedApps] = useState<any[]>([]);
     const [showAddField, setShowAddField] = useState(false);
     const [newField, setNewField] = useState({
         name: '',
@@ -447,7 +449,8 @@ function DataTableView() {
         size: 255,
         precision: 10,
         scale: 2,
-        dateFormat: 'YYYY-MM-DD'
+        dateFormat: 'YYYY-MM-DD',
+        autoIncrement: false,
     });
     
     const table = tables.find(t => t.id === selectedTableId) || tables[0];
@@ -457,6 +460,27 @@ function DataTableView() {
         setSelectedTableId(tables[0].id);
       }
     }, [tables, selectedTableId, setSelectedTableId]);
+
+    const handleDeleteTableClick = async () => {
+        if (!selectedTableId || !selectedProjectId) return;
+        try {
+            const appsSnap = await getDocs(collection(db, 'workspaces', selectedProjectId, 'apps'));
+            const affected = appsSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter((app: any) => app.dataSourceId === selectedTableId);
+            setAffectedApps(affected);
+        } catch (e) {
+            setAffectedApps([]);
+        }
+        setShowDeleteConfirm(true);
+    };
+
+    const handleDeleteTableConfirm = async () => {
+        if (!selectedTableId) return;
+        await deleteTable(selectedTableId);
+        setSelectedTableId(tables.length > 1 ? tables.find(t => t.id !== selectedTableId)?.id || null : null);
+        setShowDeleteConfirm(false);
+    };
 
     const handleAddFieldSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -469,7 +493,7 @@ function DataTableView() {
         await addField(selectedTableId, newFieldData);
 
         setShowAddField(false);
-        setNewField({ name: '', description: '', type: FieldType.TEXT, size: 255, precision: 10, scale: 2, dateFormat: 'YYYY-MM-DD' });
+        setNewField({ name: '', description: '', type: FieldType.TEXT, size: 255, precision: 10, scale: 2, dateFormat: 'YYYY-MM-DD', autoIncrement: false });
     };
 
     useEffect(() => {
@@ -559,12 +583,7 @@ function DataTableView() {
                   </button>
                   
                   <button 
-                    onClick={async () => {
-                        if (selectedTableId && confirm('Delete this table and all its data?')) {
-                            await deleteTable(selectedTableId);
-                            setSelectedTableId(tables.length > 1 ? tables.find(t => t.id !== selectedTableId)?.id || null : null);
-                        }
-                    }}
+                    onClick={handleDeleteTableClick}
                     className="text-xs font-bold text-rose-600 hover:text-rose-700 flex items-center gap-2 group transition-colors"
                   >
                       <Trash2 className="w-4 h-4" /> Delete Table
@@ -587,8 +606,18 @@ function DataTableView() {
 
                   <button 
                     onClick={async () => {
-                        if (selectedTableId && selectedProjectId) {
-                            await dataService.addRecord(selectedProjectId, selectedTableId, {});
+                        if (selectedTableId && selectedProjectId && table) {
+                            const autoData: any = {};
+                            table.fields.forEach(f => {
+                                if (f.type === FieldType.AUTO_NUMBER || (f as any).autoIncrement) {
+                                    const maxVal = records.reduce((max, r) => {
+                                        const v = parseInt(r[f.name] || '0');
+                                        return isNaN(v) ? max : Math.max(max, v);
+                                    }, 0);
+                                    autoData[f.name] = maxVal + 1;
+                                }
+                            });
+                            await dataService.addRecord(selectedProjectId, selectedTableId, autoData);
                         }
                     }}
                     className="text-xs font-bold text-primary-600 hover:text-primary-700 flex items-center gap-2 transition-colors"
@@ -597,6 +626,49 @@ function DataTableView() {
                   </button>
                 </div>
             </div>
+
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)}></div>
+                    <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-neutral-200 dark:border-slate-800">
+                        <div className="px-6 py-5 border-b border-neutral-100 dark:border-slate-800 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center shrink-0">
+                                <Trash2 className="w-5 h-5 text-rose-600" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-neutral-900 dark:text-white">Delete Table</h3>
+                                <p className="text-xs text-neutral-500 dark:text-neutral-400">This action cannot be undone.</p>
+                            </div>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-neutral-700 dark:text-neutral-300 font-medium mb-4">
+                                Are you sure you want to delete <strong>"{table?.name}"</strong>? All data in this table will be permanently removed.
+                            </p>
+                            {affectedApps.length > 0 && (
+                                <div className="mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/10 dark:border-amber-800">
+                                    <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                        <AlertTriangle className="w-3.5 h-3.5" />
+                                        {affectedApps.length} Application{affectedApps.length > 1 ? 's' : ''} will be affected
+                                    </p>
+                                    <ul className="space-y-1">
+                                        {affectedApps.map((app: any) => (
+                                            <li key={app.id} className="text-xs font-medium text-amber-600 dark:text-amber-500 flex items-center gap-1.5">
+                                                <span className="w-1 h-1 rounded-full bg-amber-500 shrink-0" />
+                                                {app.name || 'Unnamed Application'}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-2 font-medium">These applications will lose their data connection.</p>
+                                </div>
+                            )}
+                            <div className="flex gap-3">
+                                <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-2.5 font-bold text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl transition-all">Cancel</button>
+                                <button onClick={handleDeleteTableConfirm} className="flex-1 py-2.5 bg-rose-600 text-white font-bold rounded-xl hover:bg-rose-700 transition-all active:scale-95">Delete Table</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showAddField && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
@@ -708,6 +780,23 @@ function DataTableView() {
                                         onChange={(e) => (newField as any).formula = e.target.value}
                                         className="w-full px-3 py-2 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none dark:text-white"
                                     />
+                                </div>
+                            )}
+
+                            {(newField.type === FieldType.NUMBER || newField.type === FieldType.AUTO_NUMBER || newField.type === FieldType.TEXT) && (
+                                <div className="flex items-center justify-between p-3 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-black/10 animate-in slide-in-from-top-2 duration-200">
+                                    <div>
+                                        <p className="text-xs font-bold text-neutral-700 dark:text-neutral-300">Auto Increment</p>
+                                        <p className="text-[10px] text-neutral-400">Automatically assign the next value when a row is added</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewField({...newField, autoIncrement: !newField.autoIncrement})}
+                                        className="relative w-10 h-5 rounded-full transition-all shrink-0"
+                                        style={{ background: newField.autoIncrement ? 'var(--color-primary)' : '#D1D5DB' }}
+                                    >
+                                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${newField.autoIncrement ? 'left-5' : 'left-0.5'}`} />
+                                    </button>
                                 </div>
                             )}
 
@@ -922,11 +1011,11 @@ function QueryBuilderView() {
                         detected.forEach(n => { init[n] = true; });
                         setEnabledFields(init);
                         // Apply client-side after state propagates
-                        const filtered = applyClientFilters(arr).slice(0, rowLimit);
+                        const filtered = rowLimit === 0 ? applyClientFilters(arr) : applyClientFilters(arr).slice(0, rowLimit);
                         setResults(filtered.map(projectFields));
                         return;
                     }
-                    const filtered = applyClientFilters(arr).slice(0, rowLimit);
+                    const filtered = rowLimit === 0 ? applyClientFilters(arr) : applyClientFilters(arr).slice(0, rowLimit);
                     setResults(filtered.map(projectFields));
                 } else if (typeof data === 'object' && data !== null) {
                     setResults([projectFields(data)]);
@@ -939,11 +1028,16 @@ function QueryBuilderView() {
                         constraints.push(where(f.field, f.operator as any, f.value));
                     }
                 });
-                const q = query(
-                    collection(db, 'workspaces', selectedProjectId, 'tableData', selectedTable, 'rows'),
-                    ...constraints,
-                    limit(rowLimit)
-                );
+                const q = rowLimit === 0
+                    ? query(
+                        collection(db, 'workspaces', selectedProjectId, 'tableData', selectedTable, 'rows'),
+                        ...constraints
+                      )
+                    : query(
+                        collection(db, 'workspaces', selectedProjectId, 'tableData', selectedTable, 'rows'),
+                        ...constraints,
+                        limit(rowLimit)
+                      );
                 const snap = await getDocs(q);
                 const rows = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 const projected = rows.map(projectFields);
@@ -1109,6 +1203,7 @@ function QueryBuilderView() {
                             <option value={50}>50 rows</option>
                             <option value={100}>100 rows</option>
                             <option value={500}>500 rows</option>
+                            <option value={0}>All Records</option>
                         </select>
                         <button onClick={handleRunQuery} disabled={running}
                             className={cn("flex-[2] py-2 rounded-xl font-bold transition-all flex items-center justify-center gap-2 text-sm",

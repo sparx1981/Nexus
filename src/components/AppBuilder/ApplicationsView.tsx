@@ -150,7 +150,8 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
         </div>
         <button 
             onClick={() => setShowAddModal(true)}
-            className="bg-primary-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-lg shadow-primary-500/20 transition-all active:scale-95"
+            className="px-4 py-2 text-neutral-500 dark:text-white font-bold rounded-xl flex items-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg"
+            style={{ background: 'var(--project-btn-standard)' }}
         >
           <Plus className="w-4 h-4" /> New Application
         </button>
@@ -231,7 +232,8 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                 <p className="text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto mb-6">Start by creating your first business application to streamline your workflows.</p>
                 <button 
                   onClick={() => setShowAddModal(true)}
-                  className="bg-primary-600 text-white px-6 py-2 rounded-xl font-bold hover:bg-primary-700 transition-all active:scale-95"
+                  className="px-6 py-2 text-neutral-500 dark:text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 transition-all"
+                  style={{ background: 'var(--project-btn-standard)' }}
                 >Get Started</button>
             </div>
         )}
@@ -295,7 +297,8 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                                     type="button"
                                     onClick={handleNextStep}
                                     disabled={!newApp.name}
-                                    className="flex-1 py-3 bg-primary-600 text-white font-bold rounded-2xl shadow-xl shadow-primary-200 hover:bg-primary-700 active:scale-95 transition-all disabled:opacity-50"
+                                    className="flex-1 py-3 text-neutral-500 dark:text-white font-bold rounded-2xl shadow-xl shadow-primary-200 hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
+                                    style={{ background: 'var(--project-btn-standard)' }}
                                 >Continue to Data</button>
                             </div>
                         </div>

@@ -76,13 +76,17 @@ export const useSchemaStore = create<SchemaStore>((set, get) => ({
     const wsId = useAuthStore.getState().selectedProjectId;
     if (!wsId) return;
 
+    const sanitizedUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([_, v]) => v !== undefined)
+    );
+
     // In-memory update
     set((state) => ({
-      tables: state.tables.map((t) => (t.id === id ? { ...t, ...updates } : t))
+      tables: state.tables.map((t) => (t.id === id ? { ...t, ...sanitizedUpdates } : t))
     }));
     // Firestore persistence
     const tableRef = doc(db, 'workspaces', wsId, 'tables', id);
-    await updateDoc(tableRef, updates);
+    await updateDoc(tableRef, sanitizedUpdates);
   },
   deleteTable: async (id) => {
     const wsId = useAuthStore.getState().selectedProjectId;
@@ -157,11 +161,16 @@ export const useSchemaStore = create<SchemaStore>((set, get) => ({
     const wsId = useAuthStore.getState().selectedProjectId;
     if (!wsId) return;
 
+    // Remove undefined values
+    const sanitizedUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([_, v]) => v !== undefined)
+    );
+
     set((state) => ({
-      restApiConnectors: state.restApiConnectors.map((c) => (c.id === id ? { ...c, ...updates } : c))
+      restApiConnectors: state.restApiConnectors.map((c) => (c.id === id ? { ...c, ...sanitizedUpdates } : c))
     }));
     const connectorRef = doc(db, 'workspaces', wsId, 'restApiConnectors', id);
-    await updateDoc(connectorRef, updates);
+    await updateDoc(connectorRef, sanitizedUpdates);
   },
   deleteRestApiConnector: async (id) => {
     const wsId = useAuthStore.getState().selectedProjectId;

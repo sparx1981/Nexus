@@ -1,637 +1,400 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import ReactFlow, { 
-  Background, 
-  Controls, 
-  NodeProps, 
-  Handle, 
-  Position,
-  Connection,
-  addEdge,
-  useNodesState,
-  useEdgesState,
-  MarkerType,
-  Panel
+    Background, 
+    Controls, 
+    Connection, 
+    Edge, 
+    addEdge, 
+    Node,
+    Handle,
+    Position,
+    Panel,
+    useNodesState,
+    useEdgesState
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { 
-    Zap, 
-    Mail, 
-    RefreshCw, 
-    PlusCircle, 
-    Globe, 
+    Save, 
+    Play, 
     Database, 
-    Cpu, 
+    Zap, 
     Clock, 
-    Split, 
-    Repeat, 
-    Timer,
-    Save,
-    Play,
-    Settings2,
+    CheckCircle2, 
+    AlertCircle, 
+    Settings2, 
     X,
-    ChevronRight,
+    Plus,
+    GripVertical,
+    Trash2,
     Search,
-    GitBranch
+    ChevronDown,
+    ArrowRight,
+    Activity,
+    Mail,
+    Bell,
+    Share2,
+    Calendar,
+    Globe,
+    Code,
+    Layout
 } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
+import { useProjectSettingsStore } from '../../store/projectSettingsStore';
+import { db } from '../../lib/firebase';
+import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { cn } from '../../lib/utils';
-import { useSchemaStore } from '../../store/schemaStore';
 
-const NODE_TYPES_CONFIG = {
-    trigger: {
-        'record_created': { label: 'Record Created', icon: <Database className="w-4 h-4" />, color: 'bg-blue-600', textColor: 'text-blue-600' },
-        'record_updated': { label: 'Record Updated', icon: <RefreshCw className="w-4 h-4" />, color: 'bg-blue-600', textColor: 'text-blue-600' },
-        'scheduled': { label: 'Scheduled', icon: <Clock className="w-4 h-4" />, color: 'bg-blue-600', textColor: 'text-blue-600' },
-        'webhook': { label: 'Webhook Received', icon: <Globe className="w-4 h-4" />, color: 'bg-blue-500', textColor: 'text-blue-500' },
-    },
-    action: {
-        'send_email': { label: 'Send Email', icon: <Mail className="w-4 h-4" />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
-        'update_record': { label: 'Update Record', icon: <Database className="w-4 h-4" />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
-        'create_record': { label: 'Create Record', icon: <PlusCircle className="w-4 h-4" />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
-        'post_to_api': { label: 'Post To API', icon: <Globe className="w-4 h-4" />, color: 'bg-violet-600', textColor: 'text-violet-600' },
-        'ai_generate': { label: 'AI Generate', icon: <Cpu className="w-4 h-4" />, color: 'bg-emerald-500', textColor: 'text-emerald-500' },
-    },
-    logic: {
-        'condition': { label: 'Condition', icon: <Split className="w-4 h-4" />, color: 'bg-amber-500', textColor: 'text-amber-500' },
-        'loop': { label: 'Loop', icon: <Repeat className="w-4 h-4" />, color: 'bg-amber-500', textColor: 'text-amber-500' },
-        'delay': { label: 'Delay', icon: <Timer className="w-4 h-4" />, color: 'bg-amber-500', textColor: 'text-amber-500' },
-    }
-};
+// ─── Custom Node Components ──────────────────────────────────────────────────
 
-const WorkflowNode = ({ data, selected }: NodeProps<any>) => {
-    const config = (NODE_TYPES_CONFIG as any)[data.category][data.type];
-    
-    return (
-        <div className={cn(
-            "bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-xl min-w-[180px] overflow-hidden transition-all",
-            selected ? "border-primary-600 ring-4 ring-primary-600/10 dark:ring-primary-400/20" : "border-neutral-200 dark:border-slate-800"
-        )}>
-            <div className={cn("px-3 py-2 flex items-center gap-2 text-white", config.color)}>
-                {config.icon}
-                <span className="font-bold text-[11px] uppercase tracking-wider">{data.category}</span>
+const TriggerNode = ({ data, selected }: { data: any, selected?: boolean }) => (
+    <div className={cn(
+        "px-4 py-3 rounded-2xl border-2 bg-white dark:bg-slate-900 shadow-xl transition-all w-64",
+        selected ? "border-amber-500 ring-4 ring-amber-500/10" : "border-neutral-100 dark:border-slate-800"
+    )}>
+        <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 bg-amber-50 dark:bg-amber-900/30 rounded-xl">
+                <Zap className="w-5 h-5 text-amber-600" />
             </div>
-            <div className="p-4">
-                <span className="text-sm font-bold text-neutral-900 dark:text-white block mb-1">{config.label}</span>
-                <p className="text-[10px] text-neutral-400 dark:text-slate-500 font-medium truncate italic">{data.description || 'Configured'}</p>
+            <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Trigger</p>
+                <h4 className="text-sm font-bold text-neutral-900 dark:text-white">{data.label}</h4>
             </div>
-            
-            <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-neutral-300 dark:!bg-slate-600 !border-white dark:!border-slate-900" />
-            <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-neutral-300 dark:!bg-slate-600 !border-white dark:!border-slate-900" />
         </div>
-    );
-};
+        <p className="text-[10px] text-neutral-500 dark:text-slate-400 font-medium leading-relaxed">{data.description || 'Starts the workflow sequence.'}</p>
+        <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-amber-500 border-2 border-white dark:border-slate-900" />
+    </div>
+);
+
+const ActionNode = ({ data, selected }: { data: any, selected?: boolean }) => (
+    <div className={cn(
+        "px-4 py-3 rounded-2xl border-2 bg-white dark:bg-slate-900 shadow-xl transition-all w-64",
+        selected ? "border-primary-600 ring-4 ring-primary-600/10" : "border-neutral-100 dark:border-slate-800"
+    )}>
+        <Handle type="target" position={Position.Top} className="w-3 h-3 bg-primary-600 border-2 border-white dark:border-slate-900" />
+        <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 bg-primary-50 dark:bg-primary-900/30 rounded-xl">
+                {data.icon || <Activity className="w-5 h-5 text-primary-600" />}
+            </div>
+            <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Action</p>
+                <h4 className="text-sm font-bold text-neutral-900 dark:text-white">{data.label}</h4>
+            </div>
+        </div>
+        <p className="text-[10px] text-neutral-500 dark:text-slate-400 font-medium leading-relaxed">{data.description || 'Applies logic or updates data.'}</p>
+        <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-primary-600 border-2 border-white dark:border-slate-900" />
+    </div>
+);
+
+const ConditionNode = ({ data, selected }: { data: any, selected?: boolean }) => (
+    <div className={cn(
+        "px-4 py-4 rounded-3xl border-2 bg-white dark:bg-slate-900 shadow-xl transition-all w-72",
+        selected ? "border-indigo-500 ring-4 ring-indigo-500/10" : "border-neutral-100 dark:border-slate-800"
+    )}>
+        <Handle type="target" position={Position.Top} className="w-3 h-3 bg-indigo-500 border-2 border-white dark:border-slate-900" />
+        <div className="text-center">
+            <div className="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-1">Condition</p>
+            <h4 className="text-sm font-bold text-neutral-900 dark:text-white mb-4 italic px-4">"Is {data.condition || 'Status Active'}?"</h4>
+            
+            <div className="grid grid-cols-2 gap-4">
+                <div className="relative pt-2">
+                    <span className="text-[9px] font-black uppercase text-emerald-600 mb-1 block">TRUE</span>
+                    <Handle type="source" position={Position.Bottom} id="true" className="w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-900" style={{ left: '25%' }} />
+                </div>
+                <div className="relative pt-2">
+                    <span className="text-[9px] font-black uppercase text-rose-600 mb-1 block">FALSE</span>
+                    <Handle type="source" position={Position.Bottom} id="false" className="w-3 h-3 bg-rose-500 border-2 border-white dark:border-slate-900" style={{ left: '75%' }} />
+                </div>
+            </div>
+        </div>
+    </div>
+);
 
 const nodeTypes = {
-    workflow: WorkflowNode,
+    triggerNode: TriggerNode,
+    actionNode: ActionNode,
+    conditionNode: ConditionNode,
 };
 
-interface WorkflowDesignerProps {
-    workflowId: string;
-    onBack: () => void;
-}
+// ─── Main Component ──────────────────────────────────────────────────────────
 
-export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) {
-    const { tables, restApiConnectors } = useSchemaStore();
-    const postApis = restApiConnectors.filter((c: any) => c.method === 'POST');
+export function WorkflowDesigner({ workflowId, onBack }: { workflowId: string, onBack: () => void }) {
+    const [nodes, setNodes, onNodesChange] = useNodesState([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [workflow, setWorkflow] = useState<any>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [showProperties, setShowProperties] = useState(false);
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-    const [workflowName, setWorkflowName] = useState('Workflow Editor');
-    const [toast, setToast] = useState<string | null>(null);
 
-    // In a real app, we would fetch nodes/edges based on workflowId
-    // For this demo, we'll use it to set the name prefix
+    const { selectedProjectId } = useAuthStore();
+    const { settings: ps } = useProjectSettingsStore();
+
+    // Load workflow from Firestore
     useEffect(() => {
-        if (workflowId) {
-            console.log('WorkflowDesigner: Loading workflow', workflowId);
-        }
-    }, [workflowId]);
+        if (!selectedProjectId || !workflowId) return;
 
-    const initialNodes = [
-        {
-            id: 'node_1',
-            type: 'workflow',
-            position: { x: 250, y: 50 },
-            data: { category: 'trigger', type: 'record_created', description: 'Table: Users' },
-        },
-        {
-            id: 'node_2',
-            type: 'workflow',
-            position: { x: 250, y: 250 },
-            data: { category: 'action', type: 'send_email', description: 'To: Welcome Email' },
-        },
-    ];
-
-    const initialEdges = [
-        {
-            id: 'edge_1',
-            source: 'node_1',
-            target: 'node_2',
-            animated: true,
-            style: { stroke: '#1A56DB', strokeWidth: 3 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#1A56DB' },
-        },
-    ];
-
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-    const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
-    const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
-
-    const onConnect = (params: Connection) => {
-        setEdges((eds) => addEdge({
-            ...params,
-            id: `edge_${Date.now()}`,
-            animated: true,
-            style: { stroke: '#1A56DB', strokeWidth: 3 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#1A56DB' },
-        }, eds));
-        showToast('Connection created');
-    };
-
-    const onEdgeClick = useCallback((_: any, edge: any) => {
-        setSelectedEdgeId(edge.id);
-        setSelectedNodeId(null);
-    }, []);
-
-    const deleteSelectedEdge = useCallback(() => {
-        if (selectedEdgeId) {
-            setEdges(eds => eds.filter(e => e.id !== selectedEdgeId));
-            setSelectedEdgeId(null);
-            showToast('Connection deleted');
-        }
-    }, [selectedEdgeId, setEdges]);
-
-    // Colour selected edge differently
-    const styledEdges = edges.map(e => ({
-        ...e,
-        style: {
-            ...e.style,
-            stroke: e.id === selectedEdgeId ? '#ef4444' : '#1A56DB',
-            strokeWidth: e.id === selectedEdgeId ? 4 : 3,
-        },
-        markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: e.id === selectedEdgeId ? '#ef4444' : '#1A56DB',
-        },
-        label: e.id === selectedEdgeId ? '✕ click to delete' : undefined,
-        labelStyle: { fontSize: 9, fill: '#ef4444', fontWeight: 700 },
-        labelBgStyle: { fill: '#fff1f1', fillOpacity: 0.9 },
-    }));
-
-    // Keyboard delete for selected edge or node
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if ((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
-                if (selectedEdgeId) {
-                    deleteSelectedEdge();
-                } else if (selectedNodeId) {
-                    setNodes(nds => nds.filter(n => n.id !== selectedNodeId));
-                    // also remove connected edges
-                    setEdges(eds => eds.filter(e => e.source !== selectedNodeId && e.target !== selectedNodeId));
-                    setSelectedNodeId(null);
-                    showToast('Node deleted');
-                }
+        const unsub = onSnapshot(doc(db, 'workspaces', selectedProjectId, 'workflows', workflowId), (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                setWorkflow(data);
+                if (data.nodes) setNodes(data.nodes);
+                if (data.edges) setEdges(data.edges);
             }
-            if (e.key === 'Escape') {
-                setSelectedEdgeId(null);
-                setSelectedNodeId(null);
-            }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [selectedEdgeId, selectedNodeId, deleteSelectedEdge, setNodes, setEdges]);
+        });
 
-    const onDragOver = useCallback((event: any) => {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-    }, []);
+        return () => unsub();
+    }, [selectedProjectId, workflowId, setNodes, setEdges]);
 
-    const onDrop = useCallback(
-        (event: any) => {
-            event.preventDefault();
-
-            const type = event.dataTransfer.getData('application/reactflow/type');
-            const category = event.dataTransfer.getData('application/reactflow/category');
-
-            if (typeof type === 'undefined' || !type) {
-                return;
-            }
-
-            const position = reactFlowInstance.screenToFlowPosition({
-                x: event.clientX,
-                y: event.clientY,
-            });
-
-            const newNode = {
-                id: `node_${Date.now()}`,
-                type: 'workflow',
-                position,
-                data: { 
-                    category, 
-                    type, 
-                    description: (NODE_TYPES_CONFIG as any)[category][type].label 
-                },
-            };
-
-            setNodes((nds) => nds.concat(newNode));
-        },
-        [reactFlowInstance, setNodes]
+    const onConnect = useCallback(
+        (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true, style: { strokeWidth: 2, stroke: '#6366f1' } }, eds)),
+        [setEdges]
     );
 
-    const showToast = (message: string) => {
-        setToast(message);
-        setTimeout(() => setToast(null), 3000);
+    const saveWorkflow = async () => {
+        if (!selectedProjectId || !workflowId) return;
+        setIsSaving(true);
+        try {
+            await setDoc(doc(db, 'workspaces', selectedProjectId, 'workflows', workflowId), {
+                nodes,
+                edges,
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setTimeout(() => setIsSaving(false), 800);
+        }
     };
 
-    const selectedNode = nodes.find(n => n.id === selectedNodeId);
+    const addNode = (type: keyof typeof nodeTypes, label: string) => {
+        const newNode: Node = {
+            id: `${type}_${Math.random().toString(36).substr(2, 4)}`,
+            type,
+            position: { x: Math.random() * 200 + 100, y: Math.random() * 200 + 100 },
+            data: { label, description: 'Double click to edit properties.' },
+        };
+        setNodes((nds) => nds.concat(newNode));
+    };
+
+    const deleteNode = () => {
+        if (!selectedNodeId) return;
+        setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+        setEdges((eds) => eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+        setSelectedNodeId(null);
+        setShowProperties(false);
+    };
+
+    const onNodeClick = (_: any, node: Node) => {
+        setSelectedNodeId(node.id);
+        setShowProperties(true);
+    };
+
+    const onPaneClick = () => {
+        setSelectedNodeId(null);
+        setShowProperties(false);
+    };
 
     return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-50 dark:bg-slate-950 text-neutral-900 dark:text-slate-100 transition-colors duration-300">
-            {/* Toolbar */}
-            <div className="h-14 border-b border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center px-6 justify-between shrink-0 z-20">
-                <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                        <GitBranch className="w-6 h-6" />
-                    </div>
-                    <input 
-                        type="text" 
-                        value={workflowName}
-                        onChange={(e) => setWorkflowName(e.target.value)}
-                        className="text-lg font-bold text-neutral-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 w-64"
-                        placeholder="Workflow Name..."
-                    />
+        <div className="flex-1 flex overflow-hidden h-full relative">
+            {/* Left Toolbar */}
+            <aside className="w-64 border-r flex flex-col shrink-0 bg-white dark:bg-slate-900 border-neutral-100 dark:border-slate-800 transition-colors duration-300">
+                <div className="p-4 border-b border-neutral-100 dark:border-slate-800">
+                    <h3 className="font-bold text-neutral-900 dark:text-white text-sm">Node Palette</h3>
+                    <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest mt-1">Drag components to canvas</p>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                    <PaletteSection title="Triggers">
+                        <PaletteItem 
+                            label="On New Record" 
+                            icon={<Plus className="w-4 h-4 text-amber-600" />} 
+                            onClick={() => addNode('triggerNode', 'On New Record')}
+                        />
+                        <PaletteItem 
+                            label="On Update" 
+                            icon={<Clock className="w-4 h-4 text-emerald-600" />} 
+                            onClick={() => addNode('triggerNode', 'On Update')}
+                        />
+                        <PaletteItem 
+                            label="Scheduled" 
+                            icon={<Calendar className="w-4 h-4 text-indigo-600" />} 
+                            onClick={() => addNode('triggerNode', 'Daily Check')}
+                        />
+                    </PaletteSection>
+
+                    <PaletteSection title="Actions">
+                        <PaletteItem 
+                            label="Send Email" 
+                            icon={<Mail className="w-4 h-4 text-sky-600" />} 
+                            onClick={() => addNode('actionNode', 'Send Welcome Email')}
+                        />
+                        <PaletteItem 
+                            label="Send Notification" 
+                            icon={<Bell className="w-4 h-4 text-rose-600" />} 
+                            onClick={() => addNode('actionNode', 'Notify Admin')}
+                        />
+                        <PaletteItem 
+                            label="Update Record" 
+                            icon={<Database className="w-4 h-4 text-primary-600" />} 
+                            onClick={() => addNode('actionNode', 'Update Status')}
+                        />
+                        <PaletteItem 
+                            label="External Webhook" 
+                            icon={<Globe className="w-4 h-4 text-neutral-600" />} 
+                            onClick={() => addNode('actionNode', 'Trigger Hook')}
+                        />
+                        <PaletteItem 
+                            label="Execute Script" 
+                            icon={<Code className="w-4 h-4 text-violet-600" />} 
+                            onClick={() => addNode('actionNode', 'JS Script')}
+                        />
+                    </PaletteSection>
+
+                    <PaletteSection title="Logic">
+                        <PaletteItem 
+                            label="Exclusive Gate" 
+                            icon={<CheckCircle2 className="w-4 h-4 text-indigo-600" />} 
+                            onClick={() => addNode('conditionNode', 'Check Credit')}
+                        />
+                    </PaletteSection>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="p-4 border-t border-neutral-100 dark:border-slate-800">
                     <button 
-                        onClick={() => showToast('Workflow results: All stages passed ✓')}
-                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-all"
+                        onClick={onBack}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-50 dark:hover:bg-slate-800 rounded-xl transition-all"
                     >
-                        <Play className="w-4 h-4" /> Run Test
-                    </button>
-                    <button 
-                        onClick={() => showToast('Workflow saved successfully')}
-                        className="flex items-center gap-2 px-4 py-1.5 text-xs font-bold bg-primary-600 text-white rounded-lg hover:bg-opacity-90 shadow-lg shadow-primary-200 transition-all font-sans"
-                    >
-                        <Save className="w-4 h-4" /> Save Workflow
+                        <ArrowRight className="w-4 h-4 rotate-180" /> Back to List
                     </button>
                 </div>
-            </div>
+            </aside>
 
-            <div className="flex-1 flex overflow-hidden">
-                {/* Palette */}
-                <aside className="w-64 bg-white dark:bg-slate-900 border-r border-neutral-200 dark:border-slate-800 flex flex-col shrink-0">
-                    <div className="p-4 border-b border-neutral-200 dark:border-slate-800">
-                        <div className="relative">
-                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-slate-500" />
-                            <input 
-                                type="text" 
-                                placeholder="Search steps..."
-                                className="w-full pl-9 pr-3 py-1.5 bg-neutral-100 dark:bg-slate-800 border-none rounded-lg text-xs outline-none focus:ring-2 focus:ring-primary-600/20 text-neutral-900 dark:text-slate-200"
-                            />
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                        <PaletteCategory title="Triggers" category="trigger" />
-                        <PaletteCategory title="Actions" category="action" />
-                        <PaletteCategory title="Logic" category="logic" />
-                    </div>
-                </aside>
-
-                {/* React Flow Canvas */}
-                <div className="flex-1 relative pattern-grid dark:bg-slate-950" onDrop={onDrop} onDragOver={onDragOver}>
-                    <ReactFlow
-                        nodes={nodes}
-                        edges={styledEdges}
-                        onNodesChange={onNodesChange}
-                        onEdgesChange={onEdgesChange}
-                        onConnect={onConnect}
-                        onInit={setReactFlowInstance}
-                        nodeTypes={nodeTypes}
-                        onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
-                        onEdgeClick={onEdgeClick}
-                        onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
-                        deleteKeyCode={null}
-                        fitView
-                        connectionLineStyle={{ stroke: '#1A56DB', strokeWidth: 2, strokeDasharray: '6 3' }}
-                    >
-                        <Background color={document.documentElement.classList.contains('dark') ? '#334155' : '#cbd5e1'} />
-                        <Controls className="dark:bg-slate-800 dark:border-slate-700 dark:fill-slate-400" />
-                        <Panel position="bottom-right" className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-neutral-200 dark:border-slate-800 shadow-xl mb-4 mr-4 space-y-2">
-                             <div className="flex items-center gap-4 text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">
-                                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-600"></div> Trigger</span>
-                                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-600"></div> Action</span>
-                                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Logic</span>
-                                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-violet-600"></div> API</span>
+            {/* Canvas */}
+            <div className="flex-1 relative transition-colors duration-300" style={{ background: "var(--bg-primary)" }}>
+                <ReactFlow
+                    nodes={nodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onConnect={onConnect}
+                    nodeTypes={nodeTypes}
+                    onNodeClick={onNodeClick}
+                    onPaneClick={onPaneClick}
+                    fitView
+                    className="workflow-canvas"
+                >
+                    <Background color="#cbd5e1" gap={20} size={1} />
+                    <Controls className="bg-white dark:bg-slate-900 border-neutral-100 dark:border-slate-800 rounded-xl shadow-xl" />
+                    
+                    <Panel position="top-right" className="flex items-center gap-2">
+                         <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-2xl border border-neutral-100 dark:border-slate-800">
+                             <div className="flex items-center gap-4 px-2">
+                                 <div className="flex items-center gap-2">
+                                     <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                                     <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Active Draft</span>
+                                 </div>
+                                 <div className="h-4 w-[1px] bg-neutral-200 dark:bg-slate-800"></div>
+                                 <p className="text-xs font-bold text-neutral-900 dark:text-white whitespace-nowrap">{workflow?.name || 'Loading Workflow...'}</p>
                              </div>
-                             <div className="border-t border-neutral-100 dark:border-slate-800 pt-2 text-[9px] text-neutral-400 dark:text-slate-600 space-y-0.5">
-                                 <p>• Drag from a node handle to create a connection</p>
-                                 <p>• Click a connection to select it (turns red)</p>
-                                 <p>• Press <kbd className="bg-neutral-100 dark:bg-slate-800 px-1 rounded text-[8px]">Delete</kbd> to remove selected connection or node</p>
+                             <div className="flex items-center gap-1">
+                                <button 
+                                    onClick={saveWorkflow}
+                                    disabled={isSaving}
+                                    className="flex items-center gap-2 px-4 py-2 text-neutral-500 dark:text-white rounded-xl text-xs font-bold hover:opacity-90 transition-all active:scale-95 disabled:opacity-50 shadow-md"
+                                    style={{ background: 'var(--project-btn-standard)' }}
+                                >
+                                    {isSaving ? <Clock className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                    {isSaving ? 'Saving...' : 'Save Workflow'}
+                                </button>
+                                <button className="flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-xl text-xs font-bold hover:bg-neutral-800 transition-all active:scale-95 shadow-md">
+                                    <Play className="w-4 h-4" /> Run Test
+                                </button>
                              </div>
-                             {selectedEdgeId && (
-                                 <button
-                                     onClick={deleteSelectedEdge}
-                                     className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
-                                 >
-                                     <X className="w-3 h-3" /> Delete Connection
-                                 </button>
-                             )}
-                        </Panel>
-                    </ReactFlow>
-                </div>
+                         </div>
+                    </Panel>
+                </ReactFlow>
 
-                {/* Properties Panel */}
-                <aside className="w-72 bg-white dark:bg-slate-900 border-l border-neutral-200 dark:border-slate-800 flex flex-col shrink-0">
-                    <div className="p-4 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between">
-                        <h3 className="font-bold text-neutral-900 dark:text-white text-sm">
-                            {selectedEdgeId ? 'Connection' : 'Step Config'}
-                        </h3>
-                        <Settings2 className="w-4 h-4 text-neutral-400 dark:text-slate-500" />
-                    </div>
-
-                    {/* Edge selected — show connection info */}
-                    {selectedEdgeId && !selectedNode && (
-                        <div className="p-6 space-y-4">
-                            <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-900/30">
-                                <p className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">Connection Selected</p>
-                                <p className="text-[10px] text-rose-500 font-medium">
-                                    {edges.find(e => e.id === selectedEdgeId) && (() => {
-                                        const e = edges.find(ed => ed.id === selectedEdgeId)!;
-                                        const srcNode = nodes.find(n => n.id === e.source);
-                                        const tgtNode = nodes.find(n => n.id === e.target);
-                                        const srcLabel = srcNode ? (NODE_TYPES_CONFIG as any)[srcNode.data.category]?.[srcNode.data.type]?.label : e.source;
-                                        const tgtLabel = tgtNode ? (NODE_TYPES_CONFIG as any)[tgtNode.data.category]?.[tgtNode.data.type]?.label : e.target;
-                                        return `${srcLabel} → ${tgtLabel}`;
-                                    })()}
-                                </p>
+                {/* Properties Overlay */}
+                {showProperties && selectedNodeId && (
+                    <div className="absolute top-4 left-4 z-40 animate-in slide-in-from-left-4 duration-300">
+                        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-neutral-100 dark:border-slate-800 w-72 overflow-hidden">
+                            <div className="px-6 py-4 border-b border-neutral-100 dark:border-slate-800 flex items-center justify-between">
+                                <h3 className="font-bold text-neutral-900 dark:text-white">Node Properties</h3>
+                                <button onClick={() => setShowProperties(false)} className="p-1 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg text-neutral-400">
+                                    <X className="w-4 h-4" />
+                                </button>
                             </div>
-                            <button
-                                onClick={deleteSelectedEdge}
-                                className="w-full py-2.5 flex items-center justify-center gap-2 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold text-sm transition-colors"
-                            >
-                                <X className="w-4 h-4" /> Delete Connection
-                            </button>
-                            <p className="text-[10px] text-neutral-400 dark:text-slate-600 text-center">
-                                Or press <kbd className="bg-neutral-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[9px]">Delete</kbd>
-                            </p>
-                        </div>
-                    )}
-
-                    {selectedNode ? (
-                        <div className="p-6 space-y-6 overflow-y-auto">
-                            <div className="flex items-center gap-3 p-3 bg-neutral-50 dark:bg-slate-800 rounded-xl border border-neutral-200 dark:border-slate-700">
-                                <div className={cn("p-2 rounded-lg text-white", (NODE_TYPES_CONFIG as any)[selectedNode.data.category][selectedNode.data.type].color)}>
-                                    {(NODE_TYPES_CONFIG as any)[selectedNode.data.category][selectedNode.data.type].icon}
-                                </div>
-                                <div>
-                                    <h4 className="font-bold text-neutral-900 dark:text-white text-sm">{(NODE_TYPES_CONFIG as any)[selectedNode.data.category][selectedNode.data.type].label}</h4>
-                                    <p className="text-[10px] text-neutral-400 dark:text-slate-500 uppercase font-bold">{(NODE_TYPES_CONFIG as any)[selectedNode.data.category][selectedNode.data.type].category || selectedNode.data.category}</p>
-                                </div>
-                            </div>
-
-                            {selectedNode.data.type === 'record_created' && (
-                                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
-                                    <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Target Table</label>
-                                    <select 
-                                        value={(selectedNode.data as any).tableId || ''}
+                            <div className="p-6 space-y-6">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Label</label>
+                                    <input 
+                                        type="text" 
+                                        value={nodes.find(n => n.id === selectedNodeId)?.data.label || ''}
                                         onChange={(e) => {
-                                            setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, tableId: e.target.value, description: `Table: ${tables.find(t => t.id === e.target.value)?.name || e.target.value}` } } : n));
+                                            const val = e.target.value;
+                                            setNodes(nds => nds.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, label: val } } : n));
                                         }}
-                                        className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white"
+                                        className="w-full px-4 py-2.5 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 text-neutral-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Description</label>
+                                    <textarea 
+                                        rows={3}
+                                        value={nodes.find(n => n.id === selectedNodeId)?.data.description || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setNodes(nds => nds.map(n => n.id === selectedNodeId ? { ...n, data: { ...n.data, description: val } } : n));
+                                        }}
+                                        className="w-full px-4 py-3 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-primary-600/20 text-neutral-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div className="pt-4 border-t border-neutral-100 dark:border-slate-800">
+                                    <button 
+                                        onClick={deleteNode}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-xl text-xs font-bold hover:bg-rose-100 transition-all border border-rose-100 dark:border-rose-900/30 shadow-sm"
                                     >
-                                        <option value="">Select table...</option>
-                                        {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                    </select>
+                                        <Trash2 className="w-4 h-4" /> Delete Node
+                                    </button>
                                 </div>
-                            )}
-
-                            {selectedNode.data.type === 'webhook' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Webhook ID</label>
-                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" value={selectedNode.id} readOnly />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Secret Key</label>
-                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white font-mono" type="password" value="sk_test_12345" />
-                                    </div>
-                                </div>
-                            )}
-
-                            {selectedNode.data.type === 'scheduled' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Frequency</label>
-                                        <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
-                                            <option value="daily">Daily</option>
-                                            <option value="weekly">Weekly</option>
-                                            <option value="monthly">Monthly</option>
-                                            <option value="custom">Custom Cron</option>
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Time (UTC)</label>
-                                        <input type="time" className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" defaultValue="09:00" />
-                                    </div>
-                                </div>
-                            )}
-
-                            {selectedNode.data.type === 'send_email' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Recipient</label>
-                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="email@example.com" />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">CC</label>
-                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="manager@example.com" />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Subject</label>
-                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="Welcome aboard!" />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Body</label>
-                                        <textarea className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none h-24 resize-none text-neutral-900 dark:text-white" placeholder="Hello there..." />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Attachment</label>
-                                        <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
-                                            <option value="">None</option>
-                                            <option value="report">Weekly_Report.pdf</option>
-                                            <option value="invoice">Invoice_Draft.pdf</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            )}
-
-                            {['create_record', 'update_record'].includes(selectedNode.data.type) && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Target Table</label>
-                                        <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
-                                            {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Field Values</label>
-                                        <div className="p-3 bg-neutral-50 dark:bg-slate-800 rounded-xl border border-neutral-100 dark:border-slate-700 space-y-3">
-                                            <div className="flex gap-2 items-center">
-                                                <select className="flex-1 bg-transparent border-none text-[11px] font-bold text-neutral-600 dark:text-slate-400 outline-none">
-                                                    <option>Status</option>
-                                                    <option>Priority</option>
-                                                </select>
-                                                <span className="text-neutral-300">→</span>
-                                                <input className="flex-1 bg-white dark:bg-slate-900 px-2 py-1 rounded border border-neutral-200 dark:border-slate-700 text-xs" placeholder="Value" />
-                                            </div>
-                                            <button className="w-full py-1 text-[9px] font-bold text-primary-600 border border-dashed border-primary-200 rounded-lg hover:bg-white transition-colors">ADD FIELD</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {selectedNode.data.type === 'ai_generate' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">AI Prompt</label>
-                                        <textarea className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none h-24 resize-none text-neutral-900 dark:text-white" placeholder="Summarize the previous record..." />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Output Variable</label>
-                                        <input className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs font-mono outline-none text-primary-600 font-bold" defaultValue="{{ai_summary}}" />
-                                    </div>
-                                </div>
-                            )}
-
-                            {selectedNode.data.type === 'post_to_api' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none block">Target API (POST)</label>
-                                        {postApis.length === 0 ? (
-                                            <p className="text-[10px] text-amber-500 italic font-medium">No POST APIs configured. Add one in Data Studio → Sources.</p>
-                                        ) : (
-                                            <select
-                                                value={(selectedNode.data as any).apiId || ''}
-                                                onChange={(e) => setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, apiId: e.target.value, description: postApis.find((a: any) => a.id === e.target.value)?.name || 'API' } } : n))}
-                                                className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white"
-                                            >
-                                                <option value="">Select POST API...</option>
-                                                {postApis.map((api: any) => (
-                                                    <option key={api.id} value={api.id}>{api.name} — {api.baseUrl}</option>
-                                                ))}
-                                            </select>
-                                        )}
-                                    </div>
-                                    {(selectedNode.data as any).apiId && (() => {
-                                        const api = postApis.find((a: any) => a.id === (selectedNode.data as any).apiId);
-                                        const apiFields = (() => { try { const s = typeof api?.schema === 'string' ? JSON.parse(api.schema) : api?.schema; return s?.fields || []; } catch { return []; } })();
-                                        return (
-                                            <div className="space-y-3">
-                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none block">Field Mapping</label>
-                                                <p className="text-[10px] text-neutral-400 italic">Map workflow data to API fields</p>
-                                                <div className="space-y-2">
-                                                    {apiFields.length === 0 ? (
-                                                        <p className="text-[10px] text-neutral-400 italic">No schema fields found. Run a test request in Sources to populate.</p>
-                                                    ) : apiFields.map((f: any) => (
-                                                        <div key={f.id || f.name} className="flex gap-2 items-center">
-                                                            <span className="text-[10px] font-bold text-neutral-500 w-24 truncate">{f.name}</span>
-                                                            <span className="text-neutral-300">→</span>
-                                                            <input
-                                                                placeholder={`{{${f.name}}}`}
-                                                                className="flex-1 px-2 py-1 bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-700 rounded text-xs font-mono outline-none text-neutral-900 dark:text-white"
-                                                            />
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <button className="w-full py-1 text-[9px] font-bold text-violet-600 border border-dashed border-violet-200 rounded-lg hover:bg-violet-50 transition-colors">+ ADD MANUAL FIELD</button>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            )}
-
-                            {selectedNode.data.type === 'condition' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">Condition Field</label>
-                                        <select className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
-                                            <option value="status">status</option>
-                                            <option value="amount">amount</option>
-                                        </select>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <select className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
-                                            <option value="eq">Equals</option>
-                                            <option value="gt">Greater Than</option>
-                                        </select>
-                                        <input className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" placeholder="Value" />
-                                    </div>
-                                </div>
-                            )}
-
-                            {selectedNode.data.type === 'delay' && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none mb-1 block">Duration</label>
-                                        <div className="flex gap-2">
-                                            <input type="number" className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white" defaultValue="5" />
-                                            <select className="w-24 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white">
-                                                <option>Min</option>
-                                                <option>Hours</option>
-                                                <option>Days</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                            </div>
                         </div>
-                    ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center opacity-40">
-                            <PlusCircle className="w-12 h-12 text-neutral-300 dark:text-slate-600 mb-4" />
-                            <p className="text-xs font-bold text-neutral-500 dark:text-slate-400 uppercase tracking-widest">Select a node or connection to configure</p>
-                        </div>
-                    )}
-                </aside>
+                    </div>
+                )}
             </div>
-
-            {toast && (
-                <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-neutral-900/90 backdrop-blur-sm text-white px-6 py-3 rounded-full shadow-2xl z-[200] animate-in fade-in slide-in-from-bottom-4 duration-300 font-medium text-sm flex items-center gap-3">
-                    <Zap className="w-4 h-4 text-amber-400" />
-                    {toast}
-                </div>
-            )}
         </div>
     );
 }
 
-function PaletteCategory({ title, category }: { title: string, category: string }) {
-    const items = (NODE_TYPES_CONFIG as any)[category];
-    
-    const onDragStart = (event: any, nodeType: string, nodeCategory: string) => {
-        event.dataTransfer.setData('application/reactflow/type', nodeType);
-        event.dataTransfer.setData('application/reactflow/category', nodeCategory);
-        event.dataTransfer.effectAllowed = 'move';
-    };
+// ─── Internal Sub-components ─────────────────────────────────────────────────
 
+function PaletteSection({ title, children }: { title: string, children: React.ReactNode }) {
     return (
-        <section>
-            <h4 className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest mb-3">{title}</h4>
-            <div className="space-y-2">
-                {Object.entries(items).map(([type, config]: [string, any]) => (
-                    <div 
-                        key={type}
-                        draggable
-                        onDragStart={(event) => onDragStart(event, type, category)}
-                        className="flex items-center gap-3 p-3 bg-neutral-50 dark:bg-slate-800 border border-neutral-100 dark:border-slate-700 rounded-xl hover:border-primary-600 dark:hover:border-primary-500 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all group"
-                    >
-                        <div className={cn("p-1.5 rounded-lg text-white", config.color)}>
-                            {config.icon}
-                        </div>
-                        <span className="text-[11px] font-bold text-neutral-700 dark:text-slate-300">{config.label}</span>
-                    </div>
-                ))}
+        <div className="space-y-2">
+            <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest ml-1">{title}</h4>
+            <div className="space-y-1">
+                {children}
             </div>
-        </section>
+        </div>
     );
 }
 
-
+function PaletteItem({ label, icon, onClick }: { label: string, icon: React.ReactNode, onClick: () => void }) {
+    return (
+        <button 
+            draggable
+            onClick={onClick}
+            className="w-full flex items-center gap-3 p-2.5 rounded-xl border border-transparent hover:border-neutral-100 dark:hover:border-slate-800 hover:bg-neutral-50 dark:hover:bg-slate-800/50 transition-all group text-left shadow-sm hover:shadow-md"
+        >
+            <div className="p-1.5 bg-white dark:bg-slate-800 rounded-lg border border-neutral-100 dark:border-slate-700 group-hover:scale-110 transition-transform">
+                {icon}
+            </div>
+            <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300 group-hover:text-neutral-900 dark:group-hover:text-white transition-colors">{label}</span>
+            <ArrowRight className="w-3 h-3 text-neutral-300 ml-auto opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+        </button>
+    );
+}
