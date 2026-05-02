@@ -166,8 +166,8 @@ export function TrimbleConnectView({ onBack, onConnect }: TrimbleConnectViewProp
 
                 {/* ── Auth Step ── */}
                 {step === 'auth' && (
-                    <div className="max-w-lg space-y-6">
-                        {/* OAuth panel */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                        {/* Left: OAuth panel */}
                         <div className="rounded-2xl p-8 space-y-6 border" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
                             <div className="flex items-center gap-3 text-emerald-600">
                                 <Shield className="w-5 h-5" />
@@ -175,7 +175,7 @@ export function TrimbleConnectView({ onBack, onConnect }: TrimbleConnectViewProp
                             </div>
                             <h4 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Sign in with Trimble ID</h4>
                             <p className="text-sm font-medium leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                                Enter your Trimble Connected App <strong>Client ID</strong> (from the <a href="https://developer.trimble.com" target="_blank" rel="noopener" className="underline text-blue-500">Trimble Developer Portal</a>), then click Sign In to authorise via the Trimble Identity OAuth flow.
+                                Enter your Trimble Connected App <strong>Client ID</strong> then click Sign In to authorise via the Trimble Identity OAuth flow.
                             </p>
 
                             <div className="space-y-2">
@@ -186,32 +186,32 @@ export function TrimbleConnectView({ onBack, onConnect }: TrimbleConnectViewProp
                                         type="text"
                                         value={manualClientId}
                                         onChange={(e) => { setManualClientId(e.target.value); setConfigError(''); }}
-                                        placeholder="e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                        placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                                         className="flex-1 bg-transparent outline-none text-sm font-mono"
                                         style={{ color: 'var(--text-primary)' }}
                                     />
                                 </div>
                                 {configError && <p className="text-xs text-rose-500 font-medium">{configError}</p>}
                                 <p className="text-[10px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                                    Set <code className="font-mono bg-neutral-100 px-1 rounded">VITE_TRIMBLE_CLIENT_ID</code> in your <code className="font-mono bg-neutral-100 px-1 rounded">.env</code> to pre-fill this. Redirect URI to register: <code className="font-mono text-blue-500">{TRIMBLE_REDIRECT_URI}</code>
+                                    Set <code className="font-mono bg-neutral-100 px-1 rounded text-neutral-700">VITE_TRIMBLE_CLIENT_ID</code> in <code className="font-mono bg-neutral-100 px-1 rounded text-neutral-700">.env</code> to pre-fill.
                                 </p>
                             </div>
 
                             <button
                                 onClick={handleOAuthSignIn}
-                                className="w-full py-4 bg-[#005fab] text-white font-bold rounded-xl shadow-xl shadow-blue-100 hover:bg-[#004f8b] active:scale-95 transition-all flex items-center justify-center gap-2"
+                                className="w-full py-4 bg-[#005fab] text-white font-bold rounded-xl hover:bg-[#004f8b] active:scale-95 transition-all flex items-center justify-center gap-2"
                             >
                                 <ExternalLink className="w-5 h-5" /> Sign in with Trimble ID
                             </button>
 
                             <div className="relative flex items-center gap-3">
                                 <div className="flex-1 h-px" style={{ background: 'var(--border-color)' }} />
-                                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>or</span>
+                                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>or paste token</span>
                                 <div className="flex-1 h-px" style={{ background: 'var(--border-color)' }} />
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>Paste Bearer Token Manually</label>
+                                <label className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>Bearer Token</label>
                                 <textarea
                                     rows={3}
                                     value={tokenInput}
@@ -230,16 +230,35 @@ export function TrimbleConnectView({ onBack, onConnect }: TrimbleConnectViewProp
                             </div>
                         </div>
 
-                        <div className="rounded-2xl p-5 border flex items-start gap-4" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
-                            <Globe className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                            <div>
-                                <p className="text-xs font-bold mb-1" style={{ color: 'var(--text-primary)' }}>How to get a Client ID</p>
-                                <ol className="text-xs space-y-1 list-decimal list-inside" style={{ color: 'var(--text-secondary)' }}>
-                                    <li>Go to <a href="https://developer.trimble.com" target="_blank" rel="noopener" className="text-blue-500 underline">developer.trimble.com</a></li>
-                                    <li>Create a Connected App with OAuth 2.0</li>
-                                    <li>Add <code className="font-mono text-[10px] bg-neutral-100 px-1 rounded">{TRIMBLE_REDIRECT_URI}</code> as a Redirect URI</li>
-                                    <li>Copy the Client ID and paste it above</li>
-                                </ol>
+                        {/* Right: How to get Client ID guide */}
+                        <div className="rounded-2xl p-6 border space-y-5" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                                    <Globe className="w-5 h-5 text-blue-500" />
+                                </div>
+                                <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>How to get a Client ID</p>
+                            </div>
+                            <ol className="text-sm space-y-4 list-none" style={{ color: 'var(--text-secondary)' }}>
+                                {[
+                                    { n: '1', text: <>Go to <a href="https://developer.trimble.com" target="_blank" rel="noopener" className="text-blue-500 underline font-bold">developer.trimble.com</a></> },
+                                    { n: '2', text: 'Sign in or create a developer account' },
+                                    { n: '3', text: 'Navigate to "My Apps" → "Create Application"' },
+                                    { n: '4', text: 'Choose OAuth 2.0 Authorization Code flow' },
+                                    { n: '5', text: <>Add the redirect URI below to your app settings</> },
+                                    { n: '6', text: 'Copy the Client ID and paste it on the left' },
+                                ].map(({ n, text }) => (
+                                    <li key={n} className="flex items-start gap-3">
+                                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">{n}</span>
+                                        <span className="text-sm leading-relaxed">{text}</span>
+                                    </li>
+                                ))}
+                            </ol>
+                            <div className="rounded-xl p-3 border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                                <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: 'var(--text-secondary)' }}>Redirect URI to register</p>
+                                <code className="text-xs font-mono text-blue-500 break-all">{TRIMBLE_REDIRECT_URI}</code>
+                            </div>
+                            <div className="rounded-xl p-3 border border-amber-200 bg-amber-50">
+                                <p className="text-[10px] font-bold text-amber-700">Note: The Trimble Connected App must have "Trimble Connect" in its requested scopes.</p>
                             </div>
                         </div>
                     </div>

@@ -117,6 +117,31 @@ export default function App() {
   // Theme state
   type SchemeId = 'ocean' | 'garnet' | 'emerald' | 'midnight' | 'crimson' | 'royal' | 'sunset' | 'forest' | 'lavender' | 'rose' | 'slate' | 'amber' | 'ruby' | 'copper' | 'abyss';
   const [colorScheme, setColorScheme] = useState<SchemeId>(() => (localStorage.getItem('nexus-scheme') as any) || 'ocean');
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteRef = React.useRef<HTMLDivElement>(null);
+  const paletteBtnRef = React.useRef<HTMLButtonElement>(null);
+  const [palettePos, setPalettePos] = useState({ top: 0, right: 0 });
+
+  // Close palette on outside click
+  useEffect(() => {
+    if (!paletteOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (paletteRef.current && !paletteRef.current.contains(e.target as Node) &&
+          paletteBtnRef.current && !paletteBtnRef.current.contains(e.target as Node)) {
+        setPaletteOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [paletteOpen]);
+
+  const openPalette = () => {
+    if (paletteBtnRef.current) {
+      const rect = paletteBtnRef.current.getBoundingClientRect();
+      setPalettePos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    }
+    setPaletteOpen(p => !p);
+  };
   
   useEffect(() => {
     const root = window.document.documentElement;
@@ -309,13 +334,6 @@ export default function App() {
             onClick={() => setActiveTab('connectors')}
             collapsed={sidebarCollapsed}
           />
-          <SidebarItem 
-            icon={<ExternalLink className="w-5 h-5" />} 
-            label="Trimble Connect" 
-            active={activeTab === 'trimble'} 
-            onClick={() => setActiveTab('trimble')}
-            collapsed={sidebarCollapsed}
-          />
         </nav>
 
         {/* Sidebar Footer */}
@@ -405,19 +423,33 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Palette hover trigger */}
-            <div className="relative group/palette">
+            {/* Palette click trigger */}
+            <div className="relative">
               <button
+                ref={paletteBtnRef}
+                onClick={openPalette}
                 className="w-8 h-8 flex items-center justify-center rounded-xl transition-all hover:scale-110"
-                style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}
+                style={{ background: paletteOpen ? 'var(--color-primary-light)' : 'var(--bg-primary)', border: '1px solid var(--border-color)' }}
                 title="Color Scheme"
               >
                 <Palette className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
               </button>
-              {/* Slide-out palette panel */}
+            </div>
+
+            {/* Palette popup — fixed position, max z-index, no gap */}
+            {paletteOpen && (
               <div
-                className="absolute right-0 top-full mt-2 z-50 rounded-2xl shadow-2xl p-4 border opacity-0 pointer-events-none group-hover/palette:opacity-100 group-hover/palette:pointer-events-auto transition-all duration-200 origin-top-right scale-95 group-hover/palette:scale-100"
-                style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)', width: 220 }}
+                ref={paletteRef}
+                className="rounded-2xl shadow-2xl p-4 border animate-in fade-in zoom-in-95 duration-150"
+                style={{
+                  position: 'fixed',
+                  top: palettePos.top,
+                  right: palettePos.right,
+                  width: 240,
+                  zIndex: 2147483647,
+                  background: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
               >
                 <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--text-secondary)' }}>Color Scheme</p>
                 <div className="grid grid-cols-5 gap-2">
@@ -440,20 +472,19 @@ export default function App() {
                   ] as const).map(scheme => (
                     <button
                       key={scheme.name}
-                      onClick={() => setColorScheme(scheme.name as any)}
+                      onClick={() => { setColorScheme(scheme.name as any); setPaletteOpen(false); }}
                       className="flex flex-col items-center gap-1 group/swatch"
                       title={scheme.label}
                     >
                       <div
                         className={cn(
-                          "w-7 h-7 rounded-full transition-all group-hover/swatch:scale-110",
-                          colorScheme === scheme.name && "ring-2 ring-offset-2 scale-110"
+                          "w-8 h-8 rounded-full transition-all hover:scale-110",
+                          colorScheme === scheme.name && "scale-110"
                         )}
                         style={{
                           backgroundColor: scheme.color,
-                          boxShadow: colorScheme === scheme.name ? `0 0 0 2px ${scheme.color}` : undefined,
+                          outline: colorScheme === scheme.name ? `3px solid ${scheme.color}` : 'none',
                           outlineOffset: '2px',
-                          outline: colorScheme === scheme.name ? `2px solid ${scheme.color}` : 'none'
                         }}
                       />
                       <span className="text-[8px] font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>{scheme.label}</span>
@@ -461,7 +492,7 @@ export default function App() {
                   ))}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Notifications */}
             <div className="relative">

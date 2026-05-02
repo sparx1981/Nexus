@@ -18,6 +18,7 @@ import {
     Type as TextIcon,
     ChevronDown,
     ChevronRight,
+    ChevronLeft,
     ToggleLeft,
     Calendar,
     Upload,
@@ -30,7 +31,13 @@ import {
     Square,
     Database,
     Globe,
-    GripHorizontal
+    GripHorizontal,
+    PieChart as PieChartIcon,
+    PanelRightClose,
+    PanelRightOpen,
+    Maximize,
+    Rows,
+    AlignJustify
 } from 'lucide-react';
 import { 
     DndContext, 
@@ -54,7 +61,7 @@ import { db } from '../../lib/firebase';
 import { doc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 import { useSchemaStore } from '../../store/schemaStore';
 import { ComponentConfig } from '../../types';
-import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 import { ApplicationsView } from './ApplicationsView';
 
 const COMPONENT_TYPES = {
@@ -62,6 +69,8 @@ const COMPONENT_TYPES = {
         { type: 'container', label: 'Container', icon: <Square className="w-4 h-4" /> },
         { type: 'section', label: 'Section', icon: <Layers className="w-4 h-4" /> },
         { type: 'row', label: 'Row', icon: <Columns2 className="w-4 h-4" /> },
+        { type: 'accordion', label: 'Accordion', icon: <AlignJustify className="w-4 h-4" /> },
+        { type: 'tabs', label: 'Tabs', icon: <Rows className="w-4 h-4" /> },
     ],
     INPUTS: [
         { type: 'input', label: 'Text Input', icon: <Type className="w-4 h-4" /> },
@@ -78,6 +87,7 @@ const COMPONENT_TYPES = {
         { type: 'table', label: 'Data Table', icon: <TableIcon className="w-4 h-4" /> },
         { type: 'bar_chart', label: 'Chart (Bar)', icon: <BarChart className="w-4 h-4" /> },
         { type: 'line_chart', label: 'Chart (Line)', icon: <TrendingUp className="w-4 h-4" /> },
+        { type: 'pie_chart', label: 'Chart (Pie)', icon: <PieChartIcon className="w-4 h-4" /> },
         { type: 'badge', label: 'Badge/Tag', icon: <TagIcon className="w-4 h-4" /> },
     ]
 };
@@ -90,7 +100,8 @@ const CHART_DATA = [
 ];
 
 export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: string | null) => void }) {
-    const [viewMode, setViewMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+    const [viewMode, setViewMode] = useState<'desktop' | 'tablet' | 'mobile' | 'custom'>('desktop');
+    const [customWidth, setCustomWidth] = useState(1200);
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
     const [showPreview, setShowPreview] = useState(false);
     const [showPublish, setShowPublish] = useState(false);
@@ -116,7 +127,8 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         redo,
         setComponents,
         moveComponent,
-        updateComponentSize
+        updateComponentSize,
+        setComponentParent
     } = useBuilderStore();
 
     useEffect(() => {
@@ -229,7 +241,15 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         const { active, over } = event;
         setActiveDragItem(null);
 
-        if (over && over.id === 'canvas-dropzone') {
+        if (!over) return;
+
+        const overId = String(over.id);
+        // Drop onto main canvas
+        const isMainCanvas = overId === 'canvas-dropzone';
+        // Drop into a container slot: over.id = "slot:PARENTID:SLOTKEY"
+        const isSlotDrop = overId.startsWith('slot:');
+
+        if (isMainCanvas || isSlotDrop) {
             const data = active.data.current;
             const type = data?.type;
 
@@ -239,10 +259,14 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                     type,
                     label: data.label,
                     properties: getDefaultProperties(type),
-                    position: { x: 20, y: 20 },
-                    size: { width: type === 'table' || type === 'bar_chart' ? 500 : 200, height: type === 'table' || type === 'bar_chart' ? 300 : 80 }
+                    position: isMainCanvas ? { x: 20, y: 20 } : { x: 0, y: 0 },
+                    size: {
+                        width: type === 'table' || type === 'bar_chart' || type === 'line_chart' || type === 'pie_chart' ? 500 : 280,
+                        height: type === 'table' || type === 'bar_chart' || type === 'line_chart' || type === 'pie_chart' ? 300 : 80
+                    },
+                    parentId: isSlotDrop ? overId.split(':')[1] : null,
+                    slotKey: isSlotDrop ? overId.split(':')[2] : null,
                 };
-
                 addComponent(newComponent);
             }
         }
@@ -306,10 +330,24 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                             </button>
                             <div className="h-6 w-[1px] bg-neutral-200 dark:bg-slate-800"></div>
                             <div className="flex items-center gap-1 bg-neutral-100 dark:bg-slate-800 p-1 rounded-lg">
-                                <ViewToggle active={viewMode === 'desktop'} onClick={() => setViewMode('desktop')} icon={<Monitor className="w-4 h-4" />} />
-                                <ViewToggle active={viewMode === 'tablet'} onClick={() => setViewMode('tablet')} icon={<Tablet className="w-4 h-4" />} />
-                                <ViewToggle active={viewMode === 'mobile'} onClick={() => setViewMode('mobile')} icon={<Smartphone className="w-4 h-4" />} />
+                                <ViewToggle active={viewMode === 'desktop'} onClick={() => setViewMode('desktop')} icon={<Monitor className="w-4 h-4" />} title="Desktop (1440px)" />
+                                <ViewToggle active={viewMode === 'tablet'} onClick={() => setViewMode('tablet')} icon={<Tablet className="w-4 h-4" />} title="Tablet (768px)" />
+                                <ViewToggle active={viewMode === 'mobile'} onClick={() => setViewMode('mobile')} icon={<Smartphone className="w-4 h-4" />} title="Mobile (375px)" />
+                                <ViewToggle active={viewMode === 'custom'} onClick={() => setViewMode('custom')} icon={<Maximize className="w-4 h-4" />} title="Custom Size" />
                             </div>
+                            {viewMode === 'custom' && (
+                                <div className="flex items-center gap-1">
+                                    <span className="text-[10px] text-neutral-400 font-bold">W:</span>
+                                    <input
+                                        type="number"
+                                        value={customWidth}
+                                        onChange={(e) => setCustomWidth(Math.max(200, Number(e.target.value)))}
+                                        className="w-16 px-2 py-1 text-xs font-mono border border-neutral-200 rounded-md outline-none"
+                                        style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                                    />
+                                    <span className="text-[10px] text-neutral-400">px</span>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -342,24 +380,29 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
 
                     {/* The Virtual Canvas */}
                     <div className="flex-1 overflow-auto p-12 flex justify-center items-start pattern-grid">
-                        <Canvas viewMode={viewMode} appData={currentAppData} />
+                        <Canvas viewMode={viewMode} appData={currentAppData} customWidth={customWidth} />
                     </div>
                 </div>
 
                 {/* Right Properties Panel */}
                 <aside className={cn(
-                  "border-l flex flex-col shrink-0 transition-all duration-300 relative",
-                  propertiesPanelOpen ? "w-72" : "w-8"
+                  "border-l flex flex-col shrink-0 transition-all duration-300",
+                  propertiesPanelOpen ? "w-72" : "w-12"
                 )} style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
-                    <button 
-                        onClick={() => setPropertiesPanelOpen(!propertiesPanelOpen)}
-                        className="absolute -left-3 top-4 w-6 h-6 bg-white border border-neutral-200 rounded-full flex items-center justify-center text-neutral-400 hover:text-primary-600 transition-colors z-20 shadow-sm"
-                    >
-                        {propertiesPanelOpen ? <ChevronRight className="w-3 h-3" /> : <Settings2 className="w-3 h-3" />}
-                    </button>
                     {propertiesPanelOpen && (
                       <PropertiesPanel dataSourceId={currentAppData?.dataSourceId} unifiedDatasources={unifiedDatasources} />
                     )}
+                    {/* Collapse button at bottom, matching left sidebar style */}
+                    <div className="mt-auto p-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+                        <button
+                            onClick={() => setPropertiesPanelOpen(!propertiesPanelOpen)}
+                            className="w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-colors text-neutral-400 hover:text-neutral-900"
+                            title={propertiesPanelOpen ? 'Collapse panel' : 'Expand panel'}
+                        >
+                            {propertiesPanelOpen ? <PanelRightClose className="w-4 h-4 shrink-0" /> : <PanelRightOpen className="w-4 h-4 shrink-0" />}
+                            {propertiesPanelOpen && <span className="text-xs font-bold">Collapse</span>}
+                        </button>
+                    </div>
                 </aside>
             </div>
 
@@ -394,15 +437,21 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                                 <X className="w-5 h-5 text-neutral-500 dark:text-slate-400" />
                             </button>
                         </div>
-                        <div className="flex-1 overflow-auto p-8 bg-neutral-100 dark:bg-slate-950 transition-colors duration-300">
-                             <div className="bg-white dark:bg-slate-900 shadow-xl min-h-full max-w-4xl mx-auto rounded-lg border border-neutral-200 dark:border-slate-800 transition-colors duration-300 relative" style={{ minHeight: 800 }}>
+                        <div className="flex-1 overflow-auto p-8 transition-colors duration-300" style={{ background: 'var(--bg-primary)' }}>
+                             <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" style={{ background: currentAppData?.bgColor || 'var(--bg-surface)', borderColor: 'var(--border-color)', minHeight: 800 }}>
+                                 {currentAppData?.headerText && (
+                                     <div className="w-full px-6 py-3 flex items-center shrink-0"
+                                          style={{ background: currentAppData?.headerColor || 'var(--color-primary)' }}>
+                                         <span className="font-bold text-white text-sm">{currentAppData.headerText}</span>
+                                     </div>
+                                 )}
                                  {components.length === 0 ? (
-                                     <div className="absolute inset-0 flex items-center justify-center">
-                                         <p className="text-neutral-400 dark:text-slate-500 font-medium">Preview is empty. Add components to the canvas.</p>
+                                     <div className="flex items-center justify-center py-20">
+                                         <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>Preview is empty. Add components to the canvas.</p>
                                      </div>
                                  ) : (
                                      <div className="relative w-full" style={{ minHeight: 800 }}>
-                                         {components.map(c => (
+                                         {components.filter(c => !c.parentId).map(c => (
                                              <div
                                                 key={c.id}
                                                 style={{
@@ -717,6 +766,84 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
     );
 }
 
+// ──────────────────────────────────────────────────────
+// SlotDropZone — a droppable area inside container components
+// ──────────────────────────────────────────────────────
+function SlotDropZone({ parentId, slotKey, label }: { parentId: string; slotKey: string; label?: string }) {
+    const { isOver, setNodeRef } = useDroppable({ id: `slot:${parentId}:${slotKey}` });
+    return (
+        <div
+            ref={setNodeRef}
+            className={cn(
+                "min-h-[60px] w-full rounded-lg border-2 border-dashed transition-colors flex items-center justify-center text-[10px] font-bold uppercase tracking-widest",
+                isOver ? "border-primary-400 bg-primary-50/30" : "border-neutral-200 bg-neutral-50/20"
+            )}
+            style={{ color: isOver ? 'var(--color-primary)' : 'var(--text-secondary)' }}
+        >
+            {isOver ? '↓ Drop here' : (label || 'Drag component here')}
+        </div>
+    );
+}
+
+// ──────────────────────────────────────────────────────
+// ChildComponentsRenderer — renders child components of a container
+// ──────────────────────────────────────────────────────
+function ChildComponentsRenderer({
+    parentId,
+    slotKey,
+    preview,
+    formState,
+    onFormUpdate,
+    appContext,
+}: {
+    parentId: string;
+    slotKey: string;
+    preview?: boolean;
+    formState?: Record<string, any>;
+    onFormUpdate?: (field: string, val: any) => void;
+    appContext?: any;
+}) {
+    const { components, selectedId, selectComponent, moveComponent, updateComponentSize } = useBuilderStore();
+    const children = components.filter(c => c.parentId === parentId && c.slotKey === slotKey);
+
+    if (children.length === 0) {
+        if (preview) return null;
+        return <SlotDropZone parentId={parentId} slotKey={slotKey} />;
+    }
+
+    return (
+        <div className="relative" style={{ minHeight: 60 }}>
+            {!preview && <SlotDropZone parentId={parentId} slotKey={slotKey} label="+ Drop more" />}
+            <div className="space-y-2 mt-1">
+                {children.map(child => (
+                    <div
+                        key={child.id}
+                        className={cn(
+                            "relative rounded border transition-all",
+                            !preview && (selectedId === child.id ? "border-primary-400 ring-1 ring-primary-400" : "border-transparent hover:border-neutral-300")
+                        )}
+                        style={{ height: child.size?.height || 'auto', minHeight: 40 }}
+                        onMouseDown={preview ? undefined : (e) => { e.stopPropagation(); selectComponent(child.id); }}
+                    >
+                        <RenderComponent
+                            component={child}
+                            preview={preview}
+                            formState={formState}
+                            onFormUpdate={onFormUpdate}
+                            appContext={appContext}
+                        />
+                        {!preview && selectedId === child.id && (
+                            <div className="absolute -top-5 left-0 bg-primary-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">
+                                {child.label}
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function PaletteSection({ title, items }: { title: string, items: any[] }) {
     return (
         <section>
@@ -752,7 +879,7 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
     );
 }
 
-function Canvas({ viewMode, appData }: { viewMode: string, appData?: any }) {
+function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?: any, customWidth?: number }) {
     const { components, selectedId, selectComponent, moveComponent, updateComponentSize } = useBuilderStore();
     const { isOver, setNodeRef } = useDroppable({
         id: 'canvas-dropzone'
@@ -802,14 +929,16 @@ function Canvas({ viewMode, appData }: { viewMode: string, appData?: any }) {
             ref={setNodeRef}
             className={cn(
                 "shadow-2xl transition-all duration-300 min-h-[800px] border relative overflow-hidden",
-                viewMode === 'desktop' && "w-full max-w-5xl",
+                viewMode === 'desktop' && "w-[1440px] max-w-full",
                 viewMode === 'tablet' && "w-[768px]",
                 viewMode === 'mobile' && "w-[375px]",
+                viewMode === 'custom' ? "" : "",
                 isOver ? "border-primary-600" : ""
             )}
             style={{
                 background: isOver ? undefined : (appData?.bgColor || 'var(--bg-surface)'),
                 borderColor: isOver ? undefined : 'var(--border-color)',
+                ...(viewMode === 'custom' ? { width: customWidth } : {}),
             }}
             onClick={(e) => {
                 if (e.target === e.currentTarget) selectComponent(null);
@@ -834,7 +963,7 @@ function Canvas({ viewMode, appData }: { viewMode: string, appData?: any }) {
             </div>
 
             <div className="p-8">
-            {components.length === 0 ? (
+            {components.filter(c => !c.parentId).length === 0 && components.length === 0 ? (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                      <div className="text-center opacity-40">
                          <div className="w-16 h-16 bg-neutral-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-neutral-200 dark:border-slate-700">
@@ -846,7 +975,7 @@ function Canvas({ viewMode, appData }: { viewMode: string, appData?: any }) {
                 </div>
             ) : (
                 <div className="relative w-full h-full">
-                    {components.map(c => (
+                    {components.filter(c => !c.parentId).map(c => (
                         <div 
                             key={c.id} 
                             style={{
@@ -1180,42 +1309,81 @@ function RenderComponent({
 
         case 'container':
             return (
-                <div className="w-full h-full border-2 border-dashed border-neutral-200 rounded-xl bg-neutral-50/50 flex flex-col items-center justify-center text-center p-4">
-                    <Square className="w-8 h-8 text-neutral-200 mb-2" />
-                    <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest leading-none">{properties.label || 'Container'}</p>
+                <div className="w-full h-full border-2 border-dashed rounded-xl p-3 flex flex-col gap-2" style={{ borderColor: 'var(--color-primary)', background: 'var(--bg-primary)', opacity: 0.9 }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest shrink-0" style={{ color: 'var(--text-secondary)' }}>{properties.label || 'Container'}</p>
+                    <div className="flex-1">
+                        <ChildComponentsRenderer
+                            parentId={component.id} slotKey="main"
+                            preview={preview} formState={formState}
+                            onFormUpdate={onFormUpdate} appContext={appContext}
+                        />
+                    </div>
                 </div>
             );
 
         case 'section':
             return (
-                <div className="w-full h-full border-2 border-neutral-100 rounded-xl flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900 border-dashed">
-                     <Layers className="w-8 h-8 text-neutral-200 mb-2" />
-                     <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Section</p>
+                <div className="w-full h-full border-2 rounded-xl p-3 flex flex-col gap-2" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-surface)' }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest shrink-0 flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
+                        <Layers className="w-3 h-3" /> {properties.label || 'Section'}
+                    </p>
+                    <div className="flex-1">
+                        <ChildComponentsRenderer
+                            parentId={component.id} slotKey="main"
+                            preview={preview} formState={formState}
+                            onFormUpdate={onFormUpdate} appContext={appContext}
+                        />
+                    </div>
                 </div>
             );
 
-        case 'table':
+        case 'table': {
+            const tableButtons: any[] = properties.rowButtons || [];
+            const startBtns = tableButtons.filter(b => b.position === 'start');
+            const endBtns = tableButtons.filter(b => b.position === 'end');
             return (
-                <div className="w-full h-full bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden shadow-sm flex flex-col">
-                    <div className="bg-neutral-50 dark:bg-[#1A1A1A] border-b border-neutral-200 dark:border-neutral-800 px-4 py-2 flex items-center justify-between shrink-0">
-                        <span className="text-[10px] font-black uppercase text-neutral-500 flex items-center gap-2">
+                <div className="w-full h-full border rounded-xl overflow-hidden shadow-sm flex flex-col" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                    <div className="border-b px-4 py-2 flex items-center justify-between shrink-0" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                        <span className="text-[10px] font-black uppercase flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
                             <Database className="w-3 h-3 text-primary-600" />
                             {properties.dataSource || 'No Data Source'}
                         </span>
                     </div>
                     <div className="flex-1 overflow-auto">
                       <table className="w-full text-[11px]">
-                          <thead className="bg-neutral-50/50 dark:bg-[#1A1A1A]/50 sticky top-0">
+                          <thead className="sticky top-0" style={{ background: 'var(--bg-primary)' }}>
                               <tr>
-                                  <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase tracking-wider">Field A</th>
-                                  <th className="px-4 py-2 text-left font-bold text-neutral-500 uppercase tracking-wider">Field B</th>
+                                  {startBtns.length > 0 && <th className="px-3 py-2 w-px" />}
+                                  <th className="px-4 py-2 text-left font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Field A</th>
+                                  <th className="px-4 py-2 text-left font-bold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>Field B</th>
+                                  {endBtns.length > 0 && <th className="px-3 py-2 w-px" />}
                               </tr>
                           </thead>
-                          <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium">
+                          <tbody className="divide-y font-medium" style={{ borderColor: 'var(--border-color)' }}>
                               {[1, 2, 3, 4, 5].map(i => (
                                   <tr key={i}>
-                                      <td className="px-4 py-2 text-neutral-400 dark:text-neutral-500 italic">Data Row {i}</td>
-                                      <td className="px-4 py-2 text-neutral-400 dark:text-neutral-500 italic">...</td>
+                                      {startBtns.length > 0 && (
+                                          <td className="px-2 py-1.5">
+                                              <div className="flex gap-1">
+                                                  {startBtns.map((btn, bi) => (
+                                                      <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
+                                                          style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
+                                                  ))}
+                                              </div>
+                                          </td>
+                                      )}
+                                      <td className="px-4 py-2 italic" style={{ color: 'var(--text-secondary)' }}>Row {i}</td>
+                                      <td className="px-4 py-2 italic" style={{ color: 'var(--text-secondary)' }}>...</td>
+                                      {endBtns.length > 0 && (
+                                          <td className="px-2 py-1.5">
+                                              <div className="flex gap-1 justify-end">
+                                                  {endBtns.map((btn, bi) => (
+                                                      <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
+                                                          style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
+                                                  ))}
+                                              </div>
+                                          </td>
+                                      )}
                                   </tr>
                               ))}
                           </tbody>
@@ -1223,11 +1391,14 @@ function RenderComponent({
                     </div>
                 </div>
             );
+        }
 
-        case 'bar_chart':
+        case 'bar_chart': {
+            const barColor = properties.chartColor || '#1A56DB';
+            const bgColor = properties.chartBg || undefined;
             return (
-                <div className="w-full h-full bg-white dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm flex flex-col">
-                     <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-4 shrink-0">Analytics Preview</h4>
+                <div className="w-full h-full border rounded-xl p-4 shadow-sm flex flex-col" style={{ background: bgColor || 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                     <h4 className="text-[10px] font-bold uppercase tracking-widest mb-4 shrink-0" style={{ color: 'var(--text-secondary)' }}>Bar Chart{properties.dataSource ? ` · ${properties.dataSource}` : ''}</h4>
                      <div className="flex-1 min-h-0">
                       <ResponsiveContainer width="100%" height="100%">
                           <RechartsBarChart data={CHART_DATA}>
@@ -1235,17 +1406,117 @@ function RenderComponent({
                               <XAxis dataKey="name" hide />
                               <YAxis hide />
                               <Tooltip cursor={{ fill: '#F3F4F6' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                              <Bar dataKey="value" fill="#1A56DB" radius={[4, 4, 0, 0]} barSize={15} />
+                              <Bar dataKey="value" fill={barColor} radius={[4, 4, 0, 0]} barSize={15} />
                           </RechartsBarChart>
                       </ResponsiveContainer>
                      </div>
                 </div>
             );
+        }
+
+        case 'line_chart': {
+            const lineColor = properties.chartColor || '#1A56DB';
+            const lbg = properties.chartBg || undefined;
+            return (
+                <div className="w-full h-full border rounded-xl p-4 shadow-sm flex flex-col" style={{ background: lbg || 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                     <h4 className="text-[10px] font-bold uppercase tracking-widest mb-4 shrink-0" style={{ color: 'var(--text-secondary)' }}>Line Chart{properties.dataSource ? ` · ${properties.dataSource}` : ''}</h4>
+                     <div className="flex-1 min-h-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={CHART_DATA}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                              <XAxis dataKey="name" hide />
+                              <YAxis hide />
+                              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                              <Line type="monotone" dataKey="value" stroke={lineColor} strokeWidth={2} dot={{ fill: lineColor, r: 3 }} />
+                          </LineChart>
+                      </ResponsiveContainer>
+                     </div>
+                </div>
+            );
+        }
+
+        case 'pie_chart': {
+            const pieColors = properties.chartColors ? properties.chartColors.split(',').map((c: string) => c.trim()) : ['#1A56DB','#0EA5E9','#34D399','#F59E0B','#EF4444'];
+            const pbg = properties.chartBg || undefined;
+            return (
+                <div className="w-full h-full border rounded-xl p-4 shadow-sm flex flex-col" style={{ background: pbg || 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                     <h4 className="text-[10px] font-bold uppercase tracking-widest mb-4 shrink-0" style={{ color: 'var(--text-secondary)' }}>Pie Chart{properties.dataSource ? ` · ${properties.dataSource}` : ''}</h4>
+                     <div className="flex-1 min-h-0">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                              <Pie data={CHART_DATA} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius="70%" label={({ name }) => name}>
+                                  {CHART_DATA.map((_, idx) => <Cell key={idx} fill={pieColors[idx % pieColors.length]} />)}
+                              </Pie>
+                              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
+                          </PieChart>
+                      </ResponsiveContainer>
+                     </div>
+                </div>
+            );
+        }
+
+        case 'accordion': {
+            const [openIdx, setOpenIdx] = (React as any).useState(0);
+            const sections = properties.sections || [{ title: 'Section 1' }, { title: 'Section 2' }];
+            return (
+                <div className="w-full h-full flex flex-col gap-1 overflow-auto">
+                    {sections.map((sec: any, idx: number) => (
+                        <div key={idx} className="border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                            <button
+                                className="w-full flex items-center justify-between px-4 py-3 text-left font-bold text-sm"
+                                style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                                onClick={() => (preview || !preview) && setOpenIdx(openIdx === idx ? -1 : idx)}
+                            >
+                                {sec.title}
+                                <ChevronDown className={cn("w-4 h-4 transition-transform shrink-0", openIdx === idx && "rotate-180")} style={{ color: 'var(--color-primary)' }} />
+                            </button>
+                            {(openIdx === idx || !preview) && (
+                                <div className="px-3 py-3 space-y-2" style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-color)', minHeight: preview ? undefined : 60 }}>
+                                    <ChildComponentsRenderer
+                                        parentId={component.id} slotKey={`section-${idx}`}
+                                        preview={preview} formState={formState}
+                                        onFormUpdate={onFormUpdate} appContext={appContext}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        case 'tabs': {
+            const [activeTab, setActiveTab] = (React as any).useState(0);
+            const tabList = properties.tabs || [{ label: 'Tab 1' }, { label: 'Tab 2' }];
+            return (
+                <div className="w-full h-full flex flex-col overflow-hidden rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="flex border-b shrink-0 overflow-x-auto" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                        {tabList.map((tab: any, idx: number) => (
+                            <button
+                                key={idx}
+                                onClick={() => setActiveTab(idx)}
+                                className={cn("px-4 py-2.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0", activeTab === idx ? "border-current" : "border-transparent")}
+                                style={{ color: activeTab === idx ? 'var(--color-primary)' : 'var(--text-secondary)' }}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex-1 p-3 overflow-auto" style={{ background: 'var(--bg-surface)', minHeight: 80 }}>
+                        <ChildComponentsRenderer
+                            parentId={component.id} slotKey={`tab-${activeTab}`}
+                            preview={preview} formState={formState}
+                            onFormUpdate={onFormUpdate} appContext={appContext}
+                        />
+                    </div>
+                </div>
+            );
+        }
 
         default:
             return (
-                <div className="p-4 bg-neutral-100 rounded-lg text-neutral-400 text-xs italic">
-                    Rendering for {type} component...
+                <div className="p-4 rounded-lg text-xs italic" style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
+                    {type} component
                 </div>
             );
     }
@@ -1566,17 +1837,146 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                      )}
 
                      {type === 'table' && (
-                         <div className="space-y-1.5">
-                             <label className="text-[11px] font-bold text-neutral-700 uppercase">Data Source</label>
-                             <select 
-                                 value={properties.dataSource || ''}
-                                 onChange={(e) => handleUpdate('dataSource', e.target.value)}
-                                 className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
-                             >
-                                 <option value="">Select a datasource...</option>
-                                 {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
-                                 {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
-                             </select>
+                         <div className="space-y-4">
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Data Source</label>
+                                 <select 
+                                     value={properties.dataSource || ''}
+                                     onChange={(e) => handleUpdate('dataSource', e.target.value)}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                                 >
+                                     <option value="">Select a datasource...</option>
+                                     {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                                     {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
+                                 </select>
+                             </div>
+                             {/* Row Buttons */}
+                             <div className="space-y-2">
+                                 <div className="flex items-center justify-between">
+                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Row Buttons</label>
+                                     <button
+                                         onClick={() => handleUpdate('rowButtons', [...(properties.rowButtons || []), { label: 'Action', position: 'end', color: '#1A56DB' }])}
+                                         className="text-[10px] font-bold text-primary-600 hover:underline"
+                                     >+ Add Button</button>
+                                 </div>
+                                 {(properties.rowButtons || []).map((btn: any, bi: number) => (
+                                     <div key={bi} className="p-2 border border-neutral-200 rounded-lg space-y-2 bg-neutral-50">
+                                         <div className="flex gap-1">
+                                             <input
+                                                 placeholder="Label"
+                                                 value={btn.label || ''}
+                                                 onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], label: e.target.value }; handleUpdate('rowButtons', nb); }}
+                                                 className="flex-1 px-2 py-1 text-xs border border-neutral-200 rounded bg-white outline-none"
+                                             />
+                                             <select
+                                                 value={btn.position || 'end'}
+                                                 onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], position: e.target.value }; handleUpdate('rowButtons', nb); }}
+                                                 className="px-1 py-1 text-xs border border-neutral-200 rounded bg-white outline-none"
+                                             >
+                                                 <option value="start">Start</option>
+                                                 <option value="end">End</option>
+                                             </select>
+                                             <input type="color" value={btn.color || '#1A56DB'}
+                                                 onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], color: e.target.value }; handleUpdate('rowButtons', nb); }}
+                                                 className="w-7 h-7 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent"
+                                             />
+                                             <button onClick={() => handleUpdate('rowButtons', (properties.rowButtons || []).filter((_: any, i: number) => i !== bi))} className="text-rose-400 hover:text-rose-600">
+                                                 <Minus className="w-3 h-3" />
+                                             </button>
+                                         </div>
+                                     </div>
+                                 ))}
+                             </div>
+                         </div>
+                     )}
+
+                     {['bar_chart', 'line_chart', 'pie_chart'].includes(type) && (
+                         <div className="space-y-3">
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Data Source</label>
+                                 <select value={properties.dataSource || ''} onChange={(e) => handleUpdate('dataSource', e.target.value)}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm outline-none">
+                                     <option value="">Select a datasource...</option>
+                                     {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                                     {restApiConnectors.filter(c => c.method === 'GET').length > 0 && <optgroup label="REST APIs (GET)">{restApiConnectors.filter(c => c.method === 'GET').map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
+                                 </select>
+                             </div>
+                             {type !== 'pie_chart' ? (
+                                 <>
+                                     <div className="space-y-1.5">
+                                         <label className="text-[11px] font-bold text-neutral-700 uppercase">Chart Colour</label>
+                                         <div className="flex items-center gap-2">
+                                             <input type="color" value={properties.chartColor || '#1A56DB'} onChange={(e) => handleUpdate('chartColor', e.target.value)}
+                                                 className="w-8 h-8 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent" />
+                                             <input type="text" value={properties.chartColor || ''} onChange={(e) => handleUpdate('chartColor', e.target.value)}
+                                                 placeholder="#1A56DB" className="flex-1 px-2 py-1.5 text-xs font-mono bg-neutral-50 border border-neutral-200 rounded outline-none" />
+                                         </div>
+                                     </div>
+                                 </>
+                             ) : (
+                                 <div className="space-y-1.5">
+                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Pie Colours (comma-separated)</label>
+                                     <input type="text" value={properties.chartColors || '#1A56DB,#0EA5E9,#34D399,#F59E0B,#EF4444'}
+                                         onChange={(e) => handleUpdate('chartColors', e.target.value)}
+                                         placeholder="#1A56DB,#0EA5E9,..." className="w-full px-3 py-2 text-xs font-mono bg-neutral-50 border border-neutral-200 rounded-lg outline-none" />
+                                 </div>
+                             )}
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Chart Background</label>
+                                 <div className="flex items-center gap-2">
+                                     <input type="color" value={properties.chartBg || '#ffffff'} onChange={(e) => handleUpdate('chartBg', e.target.value)}
+                                         className="w-8 h-8 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent" />
+                                     <input type="text" value={properties.chartBg || ''} onChange={(e) => handleUpdate('chartBg', e.target.value)}
+                                         placeholder="transparent" className="flex-1 px-2 py-1.5 text-xs font-mono bg-neutral-50 border border-neutral-200 rounded outline-none" />
+                                     {properties.chartBg && <button onClick={() => handleUpdate('chartBg', '')} className="text-neutral-300 hover:text-rose-500 text-xs">✕</button>}
+                                 </div>
+                             </div>
+                         </div>
+                     )}
+
+                     {type === 'accordion' && (
+                         <div className="space-y-3">
+                             <div className="flex items-center justify-between">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Sections</label>
+                                 <button onClick={() => handleUpdate('sections', [...(properties.sections || []), { title: `Section ${(properties.sections?.length || 0) + 1}`, content: 'Content...' }])}
+                                     className="text-[10px] font-bold text-primary-600 hover:underline">+ Add</button>
+                             </div>
+                             {(properties.sections || [{ title: 'Section 1', content: 'Content...' }]).map((sec: any, si: number) => (
+                                 <div key={si} className="p-2 border border-neutral-200 rounded-lg space-y-1.5 bg-neutral-50">
+                                     <div className="flex gap-1 items-center">
+                                         <input value={sec.title} placeholder="Title"
+                                             onChange={(e) => { const ns = [...(properties.sections || [])]; ns[si] = { ...ns[si], title: e.target.value }; handleUpdate('sections', ns); }}
+                                             className="flex-1 px-2 py-1 text-xs border border-neutral-200 rounded bg-white outline-none font-bold" />
+                                         <button onClick={() => handleUpdate('sections', (properties.sections || []).filter((_: any, i: number) => i !== si))} className="text-rose-400 hover:text-rose-600"><Minus className="w-3 h-3" /></button>
+                                     </div>
+                                     <textarea value={sec.content} placeholder="Content"
+                                         onChange={(e) => { const ns = [...(properties.sections || [])]; ns[si] = { ...ns[si], content: e.target.value }; handleUpdate('sections', ns); }}
+                                         className="w-full px-2 py-1 text-xs border border-neutral-200 rounded bg-white outline-none resize-none h-14" />
+                                 </div>
+                             ))}
+                         </div>
+                     )}
+
+                     {type === 'tabs' && (
+                         <div className="space-y-3">
+                             <div className="flex items-center justify-between">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Tabs</label>
+                                 <button onClick={() => handleUpdate('tabs', [...(properties.tabs || []), { label: `Tab ${(properties.tabs?.length || 0) + 1}`, content: 'Content...' }])}
+                                     className="text-[10px] font-bold text-primary-600 hover:underline">+ Add</button>
+                             </div>
+                             {(properties.tabs || [{ label: 'Tab 1', content: 'Content' }]).map((tab: any, ti: number) => (
+                                 <div key={ti} className="p-2 border border-neutral-200 rounded-lg space-y-1.5 bg-neutral-50">
+                                     <div className="flex gap-1 items-center">
+                                         <input value={tab.label} placeholder="Tab Label"
+                                             onChange={(e) => { const nt = [...(properties.tabs || [])]; nt[ti] = { ...nt[ti], label: e.target.value }; handleUpdate('tabs', nt); }}
+                                             className="flex-1 px-2 py-1 text-xs border border-neutral-200 rounded bg-white outline-none font-bold" />
+                                         <button onClick={() => handleUpdate('tabs', (properties.tabs || []).filter((_: any, i: number) => i !== ti))} className="text-rose-400 hover:text-rose-600"><Minus className="w-3 h-3" /></button>
+                                     </div>
+                                     <textarea value={tab.content} placeholder="Content"
+                                         onChange={(e) => { const nt = [...(properties.tabs || [])]; nt[ti] = { ...nt[ti], content: e.target.value }; handleUpdate('tabs', nt); }}
+                                         className="w-full px-2 py-1 text-xs border border-neutral-200 rounded bg-white outline-none resize-none h-14" />
+                                 </div>
+                             ))}
                          </div>
                      )}
 
@@ -1649,10 +2049,11 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
     );
 }
 
-function ViewToggle({ active, onClick, icon }: { active: boolean; onClick: () => void; icon: React.ReactNode }) {
+function ViewToggle({ active, onClick, icon, title }: { active: boolean; onClick: () => void; icon: React.ReactNode; title?: string }) {
     return (
         <button 
             onClick={onClick}
+            title={title}
             className={cn(
                 "p-2 rounded-md transition-all",
                 active ? "bg-white text-primary-600 shadow-sm" : "text-neutral-400 hover:text-neutral-600"

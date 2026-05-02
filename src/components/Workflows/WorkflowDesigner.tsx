@@ -47,6 +47,7 @@ const NODE_TYPES_CONFIG = {
         'send_email': { label: 'Send Email', icon: <Mail className="w-4 h-4" />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
         'update_record': { label: 'Update Record', icon: <Database className="w-4 h-4" />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
         'create_record': { label: 'Create Record', icon: <PlusCircle className="w-4 h-4" />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
+        'post_to_api': { label: 'Post To API', icon: <Globe className="w-4 h-4" />, color: 'bg-violet-600', textColor: 'text-violet-600' },
         'ai_generate': { label: 'AI Generate', icon: <Cpu className="w-4 h-4" />, color: 'bg-emerald-500', textColor: 'text-emerald-500' },
     },
     logic: {
@@ -89,7 +90,8 @@ interface WorkflowDesignerProps {
 }
 
 export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) {
-    const { tables } = useSchemaStore();
+    const { tables, restApiConnectors } = useSchemaStore();
+    const postApis = restApiConnectors.filter((c: any) => c.method === 'POST');
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
     const [workflowName, setWorkflowName] = useState('Workflow Editor');
     const [toast, setToast] = useState<string | null>(null);
@@ -131,15 +133,71 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
     const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
+    const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
     const onConnect = (params: Connection) => {
         setEdges((eds) => addEdge({
             ...params,
+            id: `edge_${Date.now()}`,
             animated: true,
             style: { stroke: '#1A56DB', strokeWidth: 3 },
             markerEnd: { type: MarkerType.ArrowClosed, color: '#1A56DB' },
         }, eds));
+        showToast('Connection created');
     };
+
+    const onEdgeClick = useCallback((_: any, edge: any) => {
+        setSelectedEdgeId(edge.id);
+        setSelectedNodeId(null);
+    }, []);
+
+    const deleteSelectedEdge = useCallback(() => {
+        if (selectedEdgeId) {
+            setEdges(eds => eds.filter(e => e.id !== selectedEdgeId));
+            setSelectedEdgeId(null);
+            showToast('Connection deleted');
+        }
+    }, [selectedEdgeId, setEdges]);
+
+    // Colour selected edge differently
+    const styledEdges = edges.map(e => ({
+        ...e,
+        style: {
+            ...e.style,
+            stroke: e.id === selectedEdgeId ? '#ef4444' : '#1A56DB',
+            strokeWidth: e.id === selectedEdgeId ? 4 : 3,
+        },
+        markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: e.id === selectedEdgeId ? '#ef4444' : '#1A56DB',
+        },
+        label: e.id === selectedEdgeId ? '✕ click to delete' : undefined,
+        labelStyle: { fontSize: 9, fill: '#ef4444', fontWeight: 700 },
+        labelBgStyle: { fill: '#fff1f1', fillOpacity: 0.9 },
+    }));
+
+    // Keyboard delete for selected edge or node
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+                if (selectedEdgeId) {
+                    deleteSelectedEdge();
+                } else if (selectedNodeId) {
+                    setNodes(nds => nds.filter(n => n.id !== selectedNodeId));
+                    // also remove connected edges
+                    setEdges(eds => eds.filter(e => e.source !== selectedNodeId && e.target !== selectedNodeId));
+                    setSelectedNodeId(null);
+                    showToast('Node deleted');
+                }
+            }
+            if (e.key === 'Escape') {
+                setSelectedEdgeId(null);
+                setSelectedNodeId(null);
+            }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [selectedEdgeId, selectedNodeId, deleteSelectedEdge, setNodes, setEdges]);
 
     const onDragOver = useCallback((event: any) => {
         event.preventDefault();
@@ -242,24 +300,41 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                 <div className="flex-1 relative pattern-grid dark:bg-slate-950" onDrop={onDrop} onDragOver={onDragOver}>
                     <ReactFlow
                         nodes={nodes}
-                        edges={edges}
+                        edges={styledEdges}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
                         onConnect={onConnect}
                         onInit={setReactFlowInstance}
                         nodeTypes={nodeTypes}
-                        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-                        onPaneClick={() => setSelectedNodeId(null)}
+                        onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
+                        onEdgeClick={onEdgeClick}
+                        onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
+                        deleteKeyCode={null}
                         fitView
+                        connectionLineStyle={{ stroke: '#1A56DB', strokeWidth: 2, strokeDasharray: '6 3' }}
                     >
                         <Background color={document.documentElement.classList.contains('dark') ? '#334155' : '#cbd5e1'} />
                         <Controls className="dark:bg-slate-800 dark:border-slate-700 dark:fill-slate-400" />
-                        <Panel position="bottom-right" className="bg-white dark:bg-slate-900 p-2 rounded-xl border border-neutral-200 dark:border-slate-800 shadow-xl mb-4 mr-4">
-                             <div className="flex items-center gap-4 text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest px-2">
+                        <Panel position="bottom-right" className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-neutral-200 dark:border-slate-800 shadow-xl mb-4 mr-4 space-y-2">
+                             <div className="flex items-center gap-4 text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest">
                                  <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-600"></div> Trigger</span>
                                  <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-600"></div> Action</span>
                                  <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-amber-500"></div> Logic</span>
+                                 <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-violet-600"></div> API</span>
                              </div>
+                             <div className="border-t border-neutral-100 dark:border-slate-800 pt-2 text-[9px] text-neutral-400 dark:text-slate-600 space-y-0.5">
+                                 <p>• Drag from a node handle to create a connection</p>
+                                 <p>• Click a connection to select it (turns red)</p>
+                                 <p>• Press <kbd className="bg-neutral-100 dark:bg-slate-800 px-1 rounded text-[8px]">Delete</kbd> to remove selected connection or node</p>
+                             </div>
+                             {selectedEdgeId && (
+                                 <button
+                                     onClick={deleteSelectedEdge}
+                                     className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                                 >
+                                     <X className="w-3 h-3" /> Delete Connection
+                                 </button>
+                             )}
                         </Panel>
                     </ReactFlow>
                 </div>
@@ -267,9 +342,40 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                 {/* Properties Panel */}
                 <aside className="w-72 bg-white dark:bg-slate-900 border-l border-neutral-200 dark:border-slate-800 flex flex-col shrink-0">
                     <div className="p-4 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between">
-                        <h3 className="font-bold text-neutral-900 dark:text-white text-sm">Step Config</h3>
+                        <h3 className="font-bold text-neutral-900 dark:text-white text-sm">
+                            {selectedEdgeId ? 'Connection' : 'Step Config'}
+                        </h3>
                         <Settings2 className="w-4 h-4 text-neutral-400 dark:text-slate-500" />
                     </div>
+
+                    {/* Edge selected — show connection info */}
+                    {selectedEdgeId && !selectedNode && (
+                        <div className="p-6 space-y-4">
+                            <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-900/30">
+                                <p className="text-xs font-bold text-rose-700 dark:text-rose-400 mb-1">Connection Selected</p>
+                                <p className="text-[10px] text-rose-500 font-medium">
+                                    {edges.find(e => e.id === selectedEdgeId) && (() => {
+                                        const e = edges.find(ed => ed.id === selectedEdgeId)!;
+                                        const srcNode = nodes.find(n => n.id === e.source);
+                                        const tgtNode = nodes.find(n => n.id === e.target);
+                                        const srcLabel = srcNode ? (NODE_TYPES_CONFIG as any)[srcNode.data.category]?.[srcNode.data.type]?.label : e.source;
+                                        const tgtLabel = tgtNode ? (NODE_TYPES_CONFIG as any)[tgtNode.data.category]?.[tgtNode.data.type]?.label : e.target;
+                                        return `${srcLabel} → ${tgtLabel}`;
+                                    })()}
+                                </p>
+                            </div>
+                            <button
+                                onClick={deleteSelectedEdge}
+                                className="w-full py-2.5 flex items-center justify-center gap-2 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-bold text-sm transition-colors"
+                            >
+                                <X className="w-4 h-4" /> Delete Connection
+                            </button>
+                            <p className="text-[10px] text-neutral-400 dark:text-slate-600 text-center">
+                                Or press <kbd className="bg-neutral-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[9px]">Delete</kbd>
+                            </p>
+                        </div>
+                    )}
+
                     {selectedNode ? (
                         <div className="p-6 space-y-6 overflow-y-auto">
                             <div className="flex items-center gap-3 p-3 bg-neutral-50 dark:bg-slate-800 rounded-xl border border-neutral-200 dark:border-slate-700">
@@ -396,6 +502,53 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                                 </div>
                             )}
 
+                            {selectedNode.data.type === 'post_to_api' && (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none block">Target API (POST)</label>
+                                        {postApis.length === 0 ? (
+                                            <p className="text-[10px] text-amber-500 italic font-medium">No POST APIs configured. Add one in Data Studio → Sources.</p>
+                                        ) : (
+                                            <select
+                                                value={(selectedNode.data as any).apiId || ''}
+                                                onChange={(e) => setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, apiId: e.target.value, description: postApis.find((a: any) => a.id === e.target.value)?.name || 'API' } } : n))}
+                                                className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white"
+                                            >
+                                                <option value="">Select POST API...</option>
+                                                {postApis.map((api: any) => (
+                                                    <option key={api.id} value={api.id}>{api.name} — {api.baseUrl}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </div>
+                                    {(selectedNode.data as any).apiId && (() => {
+                                        const api = postApis.find((a: any) => a.id === (selectedNode.data as any).apiId);
+                                        const apiFields = (() => { try { const s = typeof api?.schema === 'string' ? JSON.parse(api.schema) : api?.schema; return s?.fields || []; } catch { return []; } })();
+                                        return (
+                                            <div className="space-y-3">
+                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none block">Field Mapping</label>
+                                                <p className="text-[10px] text-neutral-400 italic">Map workflow data to API fields</p>
+                                                <div className="space-y-2">
+                                                    {apiFields.length === 0 ? (
+                                                        <p className="text-[10px] text-neutral-400 italic">No schema fields found. Run a test request in Sources to populate.</p>
+                                                    ) : apiFields.map((f: any) => (
+                                                        <div key={f.id || f.name} className="flex gap-2 items-center">
+                                                            <span className="text-[10px] font-bold text-neutral-500 w-24 truncate">{f.name}</span>
+                                                            <span className="text-neutral-300">→</span>
+                                                            <input
+                                                                placeholder={`{{${f.name}}}`}
+                                                                className="flex-1 px-2 py-1 bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-700 rounded text-xs font-mono outline-none text-neutral-900 dark:text-white"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <button className="w-full py-1 text-[9px] font-bold text-violet-600 border border-dashed border-violet-200 rounded-lg hover:bg-violet-50 transition-colors">+ ADD MANUAL FIELD</button>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            )}
+
                             {selectedNode.data.type === 'condition' && (
                                 <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
                                      <div className="space-y-1.5">
@@ -434,7 +587,7 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                     ) : (
                         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center opacity-40">
                             <PlusCircle className="w-12 h-12 text-neutral-300 dark:text-slate-600 mb-4" />
-                            <p className="text-xs font-bold text-neutral-500 dark:text-slate-400 uppercase tracking-widest">Select a node to configure its behavior</p>
+                            <p className="text-xs font-bold text-neutral-500 dark:text-slate-400 uppercase tracking-widest">Select a node or connection to configure</p>
                         </div>
                     )}
                 </aside>

@@ -14,6 +14,7 @@ interface BuilderState {
   selectComponent: (id: string | null) => void;
   moveComponent: (id: string, x: number, y: number) => void;
   updateComponentSize: (id: string, width: number, height: number) => void;
+  setComponentParent: (id: string, parentId: string | null, slotKey?: string | null) => void;
   undo: () => void;
   redo: () => void;
   saveToHistory: () => void;
@@ -83,6 +84,13 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
     const { components } = get();
     set({
       components: components.map(c => c.id === id ? { ...c, size: { width, height } } : c)
+    });
+  },
+
+  setComponentParent: (id, parentId, slotKey = null) => {
+    const { components } = get();
+    set({
+      components: components.map(c => c.id === id ? { ...c, parentId, slotKey } : c)
     });
   },
 

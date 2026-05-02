@@ -102,6 +102,8 @@ export interface ComponentConfig {
   dataBinding?: string; // Field reference
   position?: { x: number; y: number };
   size?: { width: number; height: number };
+  parentId?: string | null;       // ID of container component
+  slotKey?: string | null;        // e.g. accordion section index or tab index
 }
 
 export interface RestApiConnector {

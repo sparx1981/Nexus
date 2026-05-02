@@ -812,35 +812,146 @@ function DataTableView() {
 function QueryBuilderView() {
     const { tables, restApiConnectors } = useSchemaStore();
     const { selectedProjectId } = useAuthStore();
+    const getApis = restApiConnectors.filter((c: any) => c.method === 'GET');
+
     const [selectedTable, setSelectedTable] = useState(tables[0]?.id || '');
-    const currentTable = tables.find(t => t.id === selectedTable);
-    const [filters, setFilters] = useState([{ field: '', operator: '==', value: '' }]);
+    const [enabledFields, setEnabledFields] = useState<Record<string, boolean>>({});
+    const [filters, setFilters] = useState<{ field: string; operator: string; value: string }[]>([]);
     const [results, setResults] = useState<any[]>([]);
+    const [rawJson, setRawJson] = useState<any>(null);
     const [running, setRunning] = useState(false);
     const [rowLimit, setRowLimit] = useState(25);
+    const [resultView, setResultView] = useState<'table' | 'json'>('table');
+    const [apiFields, setApiFields] = useState<string[]>([]);
+
+    const selectedApi = getApis.find((c: any) => c.id === selectedTable);
+    const currentTable = selectedApi ? null : tables.find(t => t.id === selectedTable);
+
+    // All available field names for the current source
+    const allFieldNames: string[] = selectedApi
+        ? apiFields
+        : (currentTable?.fields.map(f => f.name) || []);
+
+    // Initialise enabled map when source or fields change
+    useEffect(() => {
+        const initial: Record<string, boolean> = {};
+        allFieldNames.forEach(name => { initial[name] = true; });
+        setEnabledFields(initial);
+        setFilters([]);
+        setResults([]);
+        setRawJson(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedTable, apiFields.join(','), allFieldNames.join(',')]);
+
+    // Pull schema fields from stored schema when API selected
+    useEffect(() => {
+        if (selectedApi) {
+            try {
+                const schema = typeof selectedApi.schema === 'string'
+                    ? JSON.parse(selectedApi.schema) : selectedApi.schema;
+                setApiFields(schema?.fields?.map((f: any) => f.name) || []);
+            } catch { setApiFields([]); }
+        } else {
+            setApiFields([]);
+        }
+    }, [selectedApi]);
+
+    // Which fields are currently enabled
+    const activeFields = allFieldNames.filter(n => enabledFields[n] !== false);
+
+    // Only keep filters whose field is still enabled
+    const validFilters = filters.filter(f => !f.field || enabledFields[f.field] !== false);
+
+    const applyClientFilters = (rows: any[]) => {
+        return rows.filter(row => validFilters.every(f => {
+            if (!f.field || !f.value) return true;
+            const cell = String(row[f.field] ?? '');
+            const val = f.value;
+            switch (f.operator) {
+                case '==': return cell === val;
+                case '!=': return cell !== val;
+                case '>': return parseFloat(cell) > parseFloat(val);
+                case '<': return parseFloat(cell) < parseFloat(val);
+                case 'contains': return cell.toLowerCase().includes(val.toLowerCase());
+                default: return true;
+            }
+        }));
+    };
+
+    const projectFields = (row: any) => {
+        if (activeFields.length === 0) return row;
+        const out: any = {};
+        activeFields.forEach(f => { if (f in row) out[f] = row[f]; });
+        return out;
+    };
 
     const handleRunQuery = async () => {
-        if (!selectedProjectId || !selectedTable) return;
+        if (!selectedTable) return;
         setRunning(true);
+        setResults([]);
+        setRawJson(null);
+
         try {
-            const constraints: any[] = [];
-            filters.forEach(f => {
-                if (f.field && f.value) {
-                    constraints.push(where(f.field, f.operator as any, f.value));
+            if (selectedApi) {
+                const url = new URL(selectedApi.baseUrl);
+                (selectedApi.params || []).forEach((p: any) => { if (p.key) url.searchParams.set(p.key, p.value); });
+                const headers: Record<string, string> = {};
+                (selectedApi.headers || []).forEach((h: any) => { if (h.key) headers[h.key] = h.value; });
+
+                const res = await fetch(url.toString(), { method: 'GET', headers });
+                const contentType = res.headers.get('content-type') || '';
+                let data: any;
+                if (contentType.includes('application/json')) {
+                    data = await res.json();
+                } else {
+                    const text = await res.text();
+                    try { data = JSON.parse(text); } catch { data = text; }
                 }
-            });
 
-            const q = query(
-                collection(db, 'workspaces', selectedProjectId, 'tableData', selectedTable, 'rows'),
-                ...constraints,
-                limit(rowLimit)
-            );
+                setRawJson(data);
+                let arr = Array.isArray(data)
+                    ? data
+                    : (data?.data || data?.results || data?.items || data?.records || []);
 
-            const snap = await getDocs(q);
-            setResults(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        } catch (error) {
-            console.error('Query Error:', error);
-            handleFirestoreError(error, OperationType.LIST, `workspaces/${selectedProjectId}/tableData/${selectedTable}/rows`);
+                if (Array.isArray(arr) && arr.length > 0) {
+                    // Auto-detect fields from first row if not yet known
+                    if (apiFields.length === 0) {
+                        const detected = Object.keys(arr[0]);
+                        setApiFields(detected);
+                        const init: Record<string, boolean> = {};
+                        detected.forEach(n => { init[n] = true; });
+                        setEnabledFields(init);
+                        // Apply client-side after state propagates
+                        const filtered = applyClientFilters(arr).slice(0, rowLimit);
+                        setResults(filtered.map(projectFields));
+                        return;
+                    }
+                    const filtered = applyClientFilters(arr).slice(0, rowLimit);
+                    setResults(filtered.map(projectFields));
+                } else if (typeof data === 'object' && data !== null) {
+                    setResults([projectFields(data)]);
+                }
+            } else if (selectedProjectId && selectedTable) {
+                const constraints: any[] = [];
+                // Only push filters that map to Firestore for table sources
+                validFilters.forEach(f => {
+                    if (f.field && f.value) {
+                        constraints.push(where(f.field, f.operator as any, f.value));
+                    }
+                });
+                const q = query(
+                    collection(db, 'workspaces', selectedProjectId, 'tableData', selectedTable, 'rows'),
+                    ...constraints,
+                    limit(rowLimit)
+                );
+                const snap = await getDocs(q);
+                const rows = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const projected = rows.map(projectFields);
+                setResults(projected);
+                setRawJson(rows);
+            }
+        } catch (error: any) {
+            setRawJson({ error: error.message || 'Request failed' });
         } finally {
             setRunning(false);
         }
@@ -857,161 +968,228 @@ function QueryBuilderView() {
         document.body.removeChild(link);
     };
 
+    const addFilter = (fieldName?: string) => {
+        setFilters(prev => [...prev, { field: fieldName || '', operator: '==', value: '' }]);
+    };
+
     return (
         <div className="flex-1 flex overflow-hidden">
-            <aside className="w-80 border-r p-6 overflow-y-auto space-y-8" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
-                <section className="space-y-4">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Select Datasource</label>
-                    <select 
-                        value={selectedTable}
-                        onChange={(e) => setSelectedTable(e.target.value)}
-                        className="w-full px-3 py-2 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white"
-                    >
-                        {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
-                        {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
-                    </select>
-                </section>
+            {/* ── Left sidebar ── */}
+            <aside className="w-80 border-r overflow-y-auto" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                <div className="p-5 space-y-6">
 
-                <section className="space-y-4">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Select Fields</label>
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                        {currentTable?.fields.map(f => (
-                            <label key={f.id} className="flex items-center gap-3 p-2 hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-lg cursor-pointer group">
-                                <input type="checkbox" className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600/20" defaultChecked />
-                                <span className="text-sm text-neutral-700 font-medium group-hover:text-primary-600 transition-colors dark:text-neutral-400">{f.name}</span>
-                            </label>
-                        ))}
-                    </div>
-                </section>
-
-                <section className="space-y-4">
-                    <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Filters</label>
-                        <button 
-                            onClick={() => setFilters([...filters, { field: '', operator: 'is', value: '' }])}
-                            className="text-primary-600 hover:text-primary-700 p-1"
-                        >
-                            <Plus className="w-4 h-4" />
-                        </button>
-                    </div>
-                    <div className="space-y-3">
-                        {filters.map((f, i) => (
-                            <div key={i} className="space-y-2 p-3 bg-neutral-50 dark:bg-[#1A1A1A] rounded-xl border border-neutral-200 dark:border-neutral-800 relative">
-                                <button 
-                                    onClick={() => setFilters(filters.filter((_, idx) => idx !== i))}
-                                    className="absolute -top-2 -right-2 w-5 h-5 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-full flex items-center justify-center text-neutral-400 hover:text-rose-600 shadow-sm"
-                                >
-                                    <X className="w-3 h-3" />
-                                </button>
-                                <select 
-                                    className="w-full px-2 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs outline-none dark:text-neutral-300"
-                                    value={f.field}
-                                    onChange={(e) => {
-                                        const newFilters = [...filters];
-                                        newFilters[i].field = e.target.value;
-                                        setFilters(newFilters);
-                                    }}
-                                >
-                                    <option value="">Choose field...</option>
-                                    {currentTable?.fields.map(field => <option key={field.id} value={field.name}>{field.name}</option>)}
-                                </select>
-                                <div className="flex gap-2">
-                                    <select 
-                                        className="flex-1 px-2 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs outline-none dark:text-neutral-300"
-                                        value={f.operator}
-                                        onChange={(e) => {
-                                            const newFilters = [...filters];
-                                            newFilters[i].operator = e.target.value;
-                                            setFilters(newFilters);
-                                        }}
-                                    >
-                                        <option value="==">Equals</option>
-                                        <option value="!=">Not Equals</option>
-                                        <option value=">">Greater Than</option>
-                                        <option value="<">Less Than</option>
-                                    </select>
-                                    <input 
-                                        placeholder="Value" 
-                                        value={f.value}
-                                        onChange={(e) => {
-                                            const newFilters = [...filters];
-                                            newFilters[i].value = e.target.value;
-                                            setFilters(newFilters);
-                                        }}
-                                        className="flex-1 px-2 py-1.5 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-xs outline-none dark:text-white" 
-                                    />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-
-                <button 
-                   onClick={handleRunQuery}
-                   disabled={running}
-                   className={cn(
-                       "w-full py-2.5 rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2",
-                       running ? "bg-neutral-100 text-neutral-400 cursor-not-allowed dark:bg-neutral-800" : "bg-primary-600 text-white hover:bg-primary-700 shadow-primary-100"
-                   )}
-                >
-                    <Play className="w-4 h-4" /> {running ? 'Running...' : 'Run Query'}
-                </button>
-            </aside>
-
-            <main className="flex-1 p-8 overflow-y-auto" style={{ background: 'var(--bg-primary)' }}>
-                {results.length > 0 ? (
-                    <div className="bg-white dark:bg-[#121212] rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-xl overflow-hidden">
-                        <div className="px-6 py-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between">
-                            <div className="flex items-center gap-4">
-                                <h4 className="font-bold text-neutral-900 dark:text-white">Query Results</h4>
-                                <button 
-                                    onClick={handleExportCSV}
-                                    className="p-1 px-2 rounded-lg bg-neutral-100 dark:bg-slate-800 text-[10px] font-black uppercase text-neutral-500 hover:text-primary-600 transition-colors flex items-center gap-1"
-                                >
-                                    <Download className="w-3 h-3" /> Export CSV
-                                </button>
-                            </div>
-                    <div className="flex items-center gap-2">
+                    {/* Datasource */}
+                    <section className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>Datasource</label>
                         <select
-                            value={rowLimit}
-                            onChange={(e) => setRowLimit(Number(e.target.value))}
-                            className="text-[10px] font-black uppercase bg-neutral-100 dark:bg-slate-800 border-none rounded-lg px-2 py-1 outline-none text-neutral-500"
+                            value={selectedTable}
+                            onChange={(e) => setSelectedTable(e.target.value)}
+                            className="w-full px-3 py-2 border rounded-xl text-sm font-bold outline-none"
+                            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                         >
+                            {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                            {getApis.length > 0 && <optgroup label="REST APIs (GET)">{getApis.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>}
+                        </select>
+                        {selectedApi && (
+                            <p className="text-[10px] font-mono truncate px-1" style={{ color: 'var(--color-primary)' }}>{selectedApi.baseUrl}</p>
+                        )}
+                    </section>
+
+                    {/* Fields — with individual filter buttons */}
+                    <section className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>
+                                Fields {allFieldNames.length > 0 && <span className="ml-1 opacity-60">({activeFields.length}/{allFieldNames.length})</span>}
+                            </label>
+                            {allFieldNames.length > 0 && (
+                                <div className="flex gap-1">
+                                    <button onClick={() => { const m: Record<string,boolean>={}; allFieldNames.forEach(n=>m[n]=true); setEnabledFields(m); }} className="text-[9px] font-bold uppercase tracking-wider hover:underline" style={{ color: 'var(--color-primary)' }}>All</button>
+                                    <span style={{ color: 'var(--text-secondary)' }} className="text-[9px]">/</span>
+                                    <button onClick={() => { const m: Record<string,boolean>={}; allFieldNames.forEach(n=>m[n]=false); setEnabledFields(m); }} className="text-[9px] font-bold uppercase tracking-wider hover:underline" style={{ color: 'var(--text-secondary)' }}>None</button>
+                                </div>
+                            )}
+                        </div>
+
+                        {allFieldNames.length === 0 ? (
+                            <p className="text-[10px] italic px-1" style={{ color: 'var(--text-secondary)' }}>
+                                {selectedApi ? 'Run query to detect fields' : 'No fields found'}
+                            </p>
+                        ) : (
+                            <div className="space-y-0.5 max-h-56 overflow-y-auto rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+                                {allFieldNames.map(fieldName => {
+                                    const isOn = enabledFields[fieldName] !== false;
+                                    const hasFilter = filters.some(f => f.field === fieldName);
+                                    return (
+                                        <div key={fieldName} className={cn("flex items-center gap-2 px-3 py-2 text-xs transition-colors", isOn ? "" : "opacity-40")}
+                                            style={{ background: isOn ? 'var(--bg-surface)' : 'var(--bg-primary)' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isOn}
+                                                onChange={() => setEnabledFields(prev => ({ ...prev, [fieldName]: !isOn }))}
+                                                className="w-3.5 h-3.5 rounded shrink-0 cursor-pointer"
+                                                style={{ accentColor: 'var(--color-primary)' }}
+                                            />
+                                            <span className="flex-1 font-medium truncate" style={{ color: 'var(--text-primary)' }}>{fieldName}</span>
+                                            {isOn && (
+                                                <button
+                                                    onClick={() => hasFilter
+                                                        ? setFilters(prev => prev.filter(f => f.field !== fieldName))
+                                                        : addFilter(fieldName)
+                                                    }
+                                                    title={hasFilter ? 'Remove filter' : 'Add filter'}
+                                                    className={cn("text-[9px] font-black uppercase px-1.5 py-0.5 rounded transition-colors shrink-0", hasFilter ? "text-white" : "border")}
+                                                    style={hasFilter
+                                                        ? { background: 'var(--color-primary)', color: '#fff' }
+                                                        : { borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }
+                                                    }
+                                                >
+                                                    {hasFilter ? '− Filter' : '+ Filter'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </section>
+
+                    {/* Filters */}
+                    {filters.length > 0 && (
+                        <section className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>Filters</label>
+                                <button onClick={() => addFilter()} className="text-[10px] font-bold" style={{ color: 'var(--color-primary)' }}>
+                                    + Add
+                                </button>
+                            </div>
+                            <div className="space-y-2">
+                                {filters.map((f, i) => (
+                                    <div key={i} className="rounded-xl border p-2.5 space-y-2 relative" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
+                                        <button onClick={() => setFilters(prev => prev.filter((_, idx) => idx !== i))}
+                                            className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center shadow-sm text-rose-400 hover:text-rose-600 border"
+                                            style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                        {/* Field select — only shows enabled fields */}
+                                        <select value={f.field}
+                                            onChange={(e) => setFilters(prev => prev.map((fi, ii) => ii === i ? { ...fi, field: e.target.value } : fi))}
+                                            className="w-full px-2 py-1.5 rounded text-xs font-bold outline-none border"
+                                            style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                                            <option value="">Choose field…</option>
+                                            {activeFields.map(name => <option key={name} value={name}>{name}</option>)}
+                                        </select>
+                                        <div className="flex gap-1.5">
+                                            <select value={f.operator}
+                                                onChange={(e) => setFilters(prev => prev.map((fi, ii) => ii === i ? { ...fi, operator: e.target.value } : fi))}
+                                                className="flex-[2] px-2 py-1.5 rounded text-xs outline-none border"
+                                                style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
+                                                <option value="==">equals</option>
+                                                <option value="!=">not equals</option>
+                                                <option value=">">greater than</option>
+                                                <option value="<">less than</option>
+                                                <option value="contains">contains</option>
+                                            </select>
+                                            <input placeholder="value" value={f.value}
+                                                onChange={(e) => setFilters(prev => prev.map((fi, ii) => ii === i ? { ...fi, value: e.target.value } : fi))}
+                                                className="flex-[3] px-2 py-1.5 rounded text-xs outline-none border"
+                                                style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* Row limit + Run */}
+                    <div className="flex items-center gap-2">
+                        <select value={rowLimit} onChange={(e) => setRowLimit(Number(e.target.value))}
+                            className="text-[10px] font-black uppercase border rounded-lg px-2 py-1.5 outline-none flex-1"
+                            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
                             <option value={25}>25 rows</option>
                             <option value={50}>50 rows</option>
                             <option value={100}>100 rows</option>
+                            <option value={500}>500 rows</option>
                         </select>
-                        <span className="text-xs font-bold text-neutral-400 uppercase">{results.length} Rows</span>
+                        <button onClick={handleRunQuery} disabled={running}
+                            className={cn("flex-[2] py-2 rounded-xl font-bold transition-all flex items-center justify-center gap-2 text-sm",
+                                running ? "cursor-not-allowed opacity-50" : "text-white")}
+                            style={!running ? { background: 'var(--color-primary)' } : { background: 'var(--border-color)' }}>
+                            <Play className="w-4 h-4" /> {running ? 'Running…' : 'Run Query'}
+                        </button>
                     </div>
+                </div>
+            </aside>
+
+            {/* ── Results pane ── */}
+            <main className="flex-1 overflow-y-auto flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+                {(results.length > 0 || rawJson !== null) ? (
+                    <div className="flex-1 flex flex-col rounded-2xl border shadow-xl overflow-hidden m-6" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                        {/* Header with JSON/Table toggle */}
+                        <div className="px-5 py-3 border-b flex items-center justify-between shrink-0" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-primary)' }}>
+                            <div className="flex items-center gap-3">
+                                <h4 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Query Results</h4>
+                                <div className="flex items-center gap-0.5 p-0.5 rounded-lg border" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+                                    {(['table', 'json'] as const).map(mode => (
+                                        <button key={mode} onClick={() => setResultView(mode)}
+                                            className="px-3 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all"
+                                            style={resultView === mode
+                                                ? { background: 'var(--color-primary)', color: '#fff' }
+                                                : { color: 'var(--text-secondary)' }}>
+                                            {mode}
+                                        </button>
+                                    ))}
+                                </div>
+                                {results.length > 0 && (
+                                    <button onClick={handleExportCSV} className="px-2 py-1 rounded-lg text-[10px] font-black uppercase flex items-center gap-1 border"
+                                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>
+                                        <Download className="w-3 h-3" /> CSV
+                                    </button>
+                                )}
+                            </div>
+                            <span className="text-xs font-bold" style={{ color: 'var(--text-secondary)' }}>
+                                {results.length} rows · {activeFields.length} fields
+                            </span>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-neutral-50/50 dark:bg-[#1A1A1A]">
-                                    <tr>
-                                        {Object.keys(results[0] || {}).map(k => (
-                                            <th key={k} className="px-6 py-3 font-bold text-neutral-500 uppercase text-[10px] tracking-widest text-left">{k}</th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-medium font-mono text-xs">
-                                    {results.map((r, i) => (
-                                        <tr key={i} className="hover:bg-neutral-50 dark:hover:bg-[#1A1A1A] transition-colors">
-                                            {Object.values(r).map((v: any, j) => (
-                                                <td key={j} className="px-6 py-4 text-neutral-900 dark:text-neutral-300">
-                                                    {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-                                                </td>
+
+                        {/* Body */}
+                        <div className="flex-1 overflow-auto">
+                            {resultView === 'json' ? (
+                                <pre className="p-6 text-xs font-mono text-emerald-400 bg-slate-900 min-h-full overflow-auto whitespace-pre-wrap break-all">
+                                    {JSON.stringify(rawJson, null, 2)}
+                                </pre>
+                            ) : results.length > 0 ? (
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0" style={{ background: 'var(--bg-primary)' }}>
+                                        <tr>
+                                            {Object.keys(results[0] || {}).map(k => (
+                                                <th key={k} className="px-5 py-2.5 font-bold uppercase text-[10px] tracking-widest text-left whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{k}</th>
                                             ))}
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="divide-y font-mono text-xs" style={{ borderColor: 'var(--border-color)' }}>
+                                        {results.map((r, i) => (
+                                            <tr key={i} className="transition-colors" style={{ background: i % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-primary)' }}>
+                                                {Object.values(r).map((v: any, j) => (
+                                                    <td key={j} className="px-5 py-2.5 max-w-[200px] truncate" style={{ color: 'var(--text-primary)' }}>
+                                                        {typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="flex items-center justify-center h-32 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                                    No rows matched — switch to JSON view to inspect the raw payload.
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-center opacity-40">
-                         <Search className="w-16 h-16 text-neutral-300 mb-4" />
-                         <p className="text-neutral-500 font-bold uppercase tracking-widest text-sm">No results to display</p>
-                         <p className="text-neutral-400 text-xs mt-1">Configure and run a query to see data here.</p>
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 opacity-40">
+                        <Search className="w-16 h-16 text-neutral-300 mb-4" />
+                        <p className="text-neutral-500 font-bold uppercase tracking-widest text-sm">No results yet</p>
+                        <p className="text-neutral-400 text-xs mt-1">Select a datasource and click Run Query</p>
                     </div>
                 )}
             </main>

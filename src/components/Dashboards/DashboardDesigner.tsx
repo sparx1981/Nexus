@@ -27,7 +27,8 @@ interface DashboardDesignerProps {
 
 export const DashboardDesigner = ({ dashboard, onClose }: DashboardDesignerProps) => {
     const { updateDashboard, addCard, updateCard, deleteCard } = useDashboardStore();
-    const { tables } = useSchemaStore();
+    const { tables, restApiConnectors } = useSchemaStore();
+    const getApis = restApiConnectors.filter((c: any) => c.method === 'GET');
     const [editingCardId, setEditingCardId] = useState<string | null>(null);
 
     const handleAddCard = async (type: any) => {
@@ -170,7 +171,8 @@ export const DashboardDesigner = ({ dashboard, onClose }: DashboardDesignerProps
                                              className="w-full px-4 py-2 bg-neutral-50 dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-xl text-xs font-bold outline-none dark:text-white"
                                          >
                                              <option value="">Choose data source...</option>
-                                             {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                             {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                                             {getApis.length > 0 && <optgroup label="REST APIs (GET)">{getApis.map((c: any) => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
                                          </select>
                                      </div>
 
