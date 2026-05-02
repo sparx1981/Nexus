@@ -287,25 +287,6 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         }
     };
 
-    const { settings: ps } = useProjectSettingsStore();
-    const { isAuthenticated } = useAuthStore();
-
-    if (ps.requireSignIn && !isAuthenticated) {
-        return (
-            <div className="flex-1 flex items-center justify-center bg-neutral-50 dark:bg-slate-900">
-                <div className="text-center p-12 bg-white dark:bg-slate-800 rounded-3xl shadow-xl max-w-sm border border-neutral-100 dark:border-slate-700">
-                    <Database className="w-12 h-12 text-primary-600 mx-auto mb-4" />
-                    <h2 className="text-xl font-bold text-neutral-900 dark:text-white mb-2">Protected Resource</h2>
-                    <p className="text-sm text-neutral-500 mb-6">This application requires a Nexus account to access. Please sign in to continue.</p>
-                    <button 
-                        onClick={() => window.location.reload()}
-                        className="w-full bg-primary-600 text-white py-3 rounded-xl font-bold hover:bg-primary-700 transition-all"
-                    >Sign In</button>
-                </div>
-            </div>
-        );
-    }
-
     if (!currentAppId) {
         return <ApplicationsView onSelectApp={(id) => setCurrentAppId(id)} />;
     }
@@ -459,15 +440,11 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                             </button>
                         </div>
                         <div className="flex-1 overflow-auto p-8 transition-colors duration-300" style={{ background: 'var(--bg-primary)' }}>
-                             <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" 
-                                  style={{ background: currentAppData?.bgColor || ps.applicationBackgroundColour || 'var(--bg-surface)', borderColor: 'var(--border-color)', minHeight: 800 }}>
-                                 {(currentAppData?.showHeading ?? ps.enableApplicationHeadings) && (
+                             <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" style={{ background: currentAppData?.bgColor || 'var(--bg-surface)', borderColor: 'var(--border-color)', minHeight: 800 }}>
+                                 {currentAppData?.headerText && (
                                      <div className="w-full px-6 py-3 flex items-center shrink-0"
-                                          style={{ 
-                                              height: currentAppData?.headerHeight || ps.headingHeight || 48,
-                                              background: currentAppData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)' 
-                                          }}>
-                                         <span className="font-bold text-white text-sm">{currentAppData?.headerText || ps.headingText}</span>
+                                          style={{ background: currentAppData?.headerColor || 'var(--color-primary)' }}>
+                                         <span className="font-bold text-white text-sm">{currentAppData.headerText}</span>
                                      </div>
                                  )}
                                  {components.length === 0 ? (
@@ -916,7 +893,6 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
 
 function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?: any, customWidth?: number }) {
     const { components, selectedId, selectComponent, moveComponent, updateComponentSize } = useBuilderStore();
-    const { settings: ps } = useProjectSettingsStore();
     const { isOver, setNodeRef } = useDroppable({
         id: 'canvas-dropzone'
     });
@@ -972,7 +948,7 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
                 isOver ? "border-primary-600" : ""
             )}
             style={{
-                background: isOver ? undefined : (appData?.bgColor || ps.applicationBackgroundColour || 'var(--bg-surface)'),
+                background: isOver ? undefined : (appData?.bgColor || 'var(--bg-surface)'),
                 borderColor: isOver ? undefined : 'var(--border-color)',
                 ...(viewMode === 'custom' ? { width: customWidth } : {}),
             }}
@@ -981,15 +957,12 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
             }}
         >
             {/* App Header band */}
-            {(appData?.showHeading ?? ps.enableApplicationHeadings) && (
+            {appData?.headerText && (
                 <div
                     className="w-full px-6 py-3 flex items-center shrink-0 select-none"
-                    style={{ 
-                        height: appData?.headerHeight || ps.headingHeight || 48,
-                        background: appData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)' 
-                    }}
+                    style={{ background: appData?.headerColor || 'var(--color-primary)' }}
                 >
-                    <span className="font-bold text-white text-sm">{appData?.headerText || ps.headingText}</span>
+                    <span className="font-bold text-white text-sm">{appData.headerText}</span>
                 </div>
             )}
 
@@ -1100,7 +1073,6 @@ function RenderComponent({
 }) {
     const { type, properties, size } = component;
     const { selectedProjectId } = useAuthStore();
-    const { settings: ps } = useProjectSettingsStore();
 
     switch (type) {
         case 'heading':
@@ -1144,9 +1116,14 @@ function RenderComponent({
                                 alert('No key fields defined for update mode');
                                 return;
                             }
+                            const missingKeys = keyFields.filter(kf => formState?.[kf] === undefined || formState?.[kf] === '');
+                            if (missingKeys.length > 0) {
+                                alert(`Please fill in required key field(s): ${missingKeys.join(', ')}`);
+                                return;
+                            }
                             const q = query(
                                 collection(db, 'workspaces', selectedProjectId, 'tableData', tableId, 'rows'),
-                                ...keyFields.map(kf => where(kf, '==', formState?.[kf]))
+                                ...keyFields.map(kf => where(kf, '==', formState![kf]))
                             );
                             const snap = await getDocs(q);
                             if (snap.empty) {
@@ -1162,9 +1139,14 @@ function RenderComponent({
                                 alert('No key fields defined for delete mode');
                                 return;
                             }
+                            const missingKeys = keyFields.filter(kf => formState?.[kf] === undefined || formState?.[kf] === '');
+                            if (missingKeys.length > 0) {
+                                alert(`Please fill in required key field(s): ${missingKeys.join(', ')}`);
+                                return;
+                            }
                              const q = query(
                                 collection(db, 'workspaces', selectedProjectId, 'tableData', tableId, 'rows'),
-                                ...keyFields.map(kf => where(kf, '==', formState?.[kf]))
+                                ...keyFields.map(kf => where(kf, '==', formState![kf]))
                             );
                             const snap = await getDocs(q);
                             if (snap.empty) {
@@ -1189,45 +1171,18 @@ function RenderComponent({
                     onClick={handleClick}
                     style={properties.style === 'custom' ? {
                         width: '100%', height: '100%',
-                        backgroundColor: properties.customBg || ps.buttonColourStandard || '#334155',
+                        backgroundColor: properties.customBg || '#334155',
                         color: properties.customText || '#ffffff',
-                        '--btn-hover-bg': properties.customHoverBg || ps.buttonColourHover || '#1e293b',
-                        '--btn-active-bg': properties.customActiveBg || ps.buttonColourClicked || '#0f172a',
-                    } as any : (properties.style === 'primary' ? {
-                        width: '100%', height: '100%',
-                        backgroundColor: ps.buttonColourStandard || '',
-                    } : { width: '100%', height: '100%' })}
-                    onMouseEnter={(e) => { 
-                        if (properties.style === 'custom') {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg || ps.buttonColourHover || '#1e293b'; 
-                        } else if (properties.style === 'primary' && ps.buttonColourHover) {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourHover;
-                        }
-                    }}
-                    onMouseLeave={(e) => { 
-                        if (properties.style === 'custom') {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || ps.buttonColourStandard || '#334155'; 
-                        } else if (properties.style === 'primary') {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourStandard || '';
-                        }
-                    }}
-                    onMouseDown={(e) => { 
-                        if (properties.style === 'custom') {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customActiveBg || ps.buttonColourClicked || '#0f172a'; 
-                        } else if (properties.style === 'primary' && ps.buttonColourClicked) {
-                             (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourClicked;
-                        }
-                    }}
-                    onMouseUp={(e) => { 
-                        if (properties.style === 'custom') {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg || ps.buttonColourHover || '#1e293b'; 
-                        } else if (properties.style === 'primary' && ps.buttonColourHover) {
-                            (e.currentTarget as HTMLElement).style.backgroundColor = ps.buttonColourHover;
-                        }
-                    }}
+                        '--btn-hover-bg': properties.customHoverBg || properties.customBg || '#1e293b',
+                        '--btn-active-bg': properties.customActiveBg || properties.customBg || '#0f172a',
+                    } as any : { width: '100%', height: '100%' }}
+                    onMouseEnter={(e) => { if (properties.style === 'custom' && properties.customHoverBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg; }}
+                    onMouseLeave={(e) => { if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155'; }}
+                    onMouseDown={(e) => { if (properties.style === 'custom' && properties.customActiveBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customActiveBg; }}
+                    onMouseUp={(e) => { if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155'; }}
                     className={cn(
                         "rounded-xl font-bold transition-all shadow-md active:scale-95",
-                        properties.style === 'primary' ? "text-white shadow-primary-200" :
+                        properties.style === 'primary' ? "bg-primary-600 text-white hover:bg-primary-700 shadow-primary-200" :
                         properties.style === 'secondary' ? "bg-white border-2 border-neutral-200 text-neutral-700 hover:bg-neutral-50 shadow-neutral-100 dark:bg-[#1A1A1A] dark:border-neutral-800 dark:text-neutral-300" :
                         properties.style === 'custom' ? "" :
                         "bg-error-600 text-white hover:bg-error-700 shadow-error-200"
@@ -1339,8 +1294,8 @@ function RenderComponent({
                     <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300">{properties.label || 'Dropdown'}</label>
                     <div className="relative flex-1">
                         <select 
-                            value={properties.fieldMapping && formState ? formState[properties.fieldMapping] : ''}
-                            onChange={(e) => preview && properties.fieldMapping && onFormUpdate?.(properties.fieldMapping, e.target.value)}
+                            value={formState ? (formState[properties.fieldMapping || component.id] ?? '') : ''}
+                            onChange={(e) => { if (preview) onFormUpdate?.(properties.fieldMapping || component.id, e.target.value); }}
                             className="w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none appearance-none dark:text-white"
                             disabled={!preview}
                         >
@@ -1365,8 +1320,8 @@ function RenderComponent({
                     </label>
                     <input 
                         type="text" 
-                        value={properties.fieldMapping && formState ? formState[properties.fieldMapping] : ''}
-                        onChange={(e) => preview && properties.fieldMapping && onFormUpdate?.(properties.fieldMapping, e.target.value)}
+                        value={formState ? (formState[properties.fieldMapping || component.id] ?? '') : ''}
+                        onChange={(e) => { if (preview) onFormUpdate?.(properties.fieldMapping || component.id, e.target.value); }}
                         placeholder={properties.placeholder || 'Enter value...'}
                         className="w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none transition-all dark:text-white"
                         disabled={!preview}
@@ -1818,7 +1773,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                                  <select 
                                      value={properties.fieldMapping || ''}
                                      onChange={(e) => {
-                                         const field = availableFields.find(f => f.id === e.target.value);
+                                         const field = availableFields.find(f => f.name === e.target.value);
                                          updateComponent(selectedId!, {
                                              properties: { 
                                                  ...properties, 
@@ -1831,7 +1786,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                                  >
                                      <option value="">Manual Input</option>
                                      {availableFields.map(f => (
-                                         <option key={f.id} value={f.id}>
+                                         <option key={f.id} value={f.name}>
                                              {f.name} ({f.type})
                                          </option>
                                      ))}

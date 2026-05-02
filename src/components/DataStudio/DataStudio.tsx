@@ -160,8 +160,8 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
         <div className="flex-1"></div>
         <button 
             onClick={() => setShowAddTable(true)}
-            className="px-3 py-1.5 text-neutral-500 dark:text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 shadow-sm transition-all shadow-primary-200/20"
-            style={{ background: 'var(--project-btn-standard)' }}
+            className="text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 transition-all active:scale-95 hover:opacity-90"
+            style={{ background: 'var(--color-primary)' }}
         >
           <Plus className="w-4 h-4" /> New Table
         </button>
@@ -231,7 +231,8 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
                           >Cancel</button>
                           <button 
                             type="submit"
-                            className="flex-1 px-4 py-2.5 bg-primary-600 text-white font-bold rounded-xl shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all active:scale-95"
+                            className="flex-1 px-4 py-2.5 text-white font-bold rounded-xl transition-all active:scale-95 hover:opacity-90"
+                            style={{ background: 'var(--color-primary)' }}
                           >Create Table</button>
                       </div>
                   </form>
@@ -398,7 +399,7 @@ function CSVImportModal({ onFinish, onCancel }: { onFinish: () => void; onCancel
                                         <button 
                                             disabled={loading}
                                             onClick={handleImportNew}
-                                            className="px-8 py-2.5 bg-primary-600 text-white font-bold rounded-xl shadow-xl shadow-primary-200 hover:bg-primary-700 active:scale-95 disabled:bg-neutral-300 disabled:shadow-none transition-all flex items-center gap-2"
+                                            className="px-8 py-2.5 text-white font-bold rounded-xl active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 hover:opacity-90" style={{ background: loading ? undefined : 'var(--color-primary)' }}
                                         >
                                             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Start Import"}
                                         </button>
@@ -808,7 +809,8 @@ function DataTableView() {
                                 >Cancel</button>
                                 <button 
                                     type="submit"
-                                    className="flex-1 py-2.5 bg-primary-600 text-white font-bold rounded-xl shadow-lg shadow-primary-100 hover:bg-primary-700 active:scale-95 transition-all"
+                                    className="flex-1 py-2.5 text-white font-bold rounded-xl active:scale-95 transition-all hover:opacity-90"
+                                    style={{ background: 'var(--color-primary)' }}
                                 >Add Field</button>
                             </div>
                         </form>
@@ -1349,7 +1351,7 @@ function SourcesView({ onNavigate }: { onNavigate?: (tab: any) => void }) {
                                 "w-full py-2.5 rounded-xl text-xs font-bold transition-all",
                                 (c.status === 'connected' && c.id === 'trimble')
                                     ? "bg-neutral-50 text-neutral-400 cursor-default dark:bg-neutral-800" 
-                                    : "bg-primary-600 text-white hover:bg-primary-700 shadow-lg shadow-primary-100 active:scale-95"
+                                    : "text-white hover:opacity-90 active:scale-95 [background:var(--color-primary)]"
                             )}
                         >
                             {c.id === 'internal' ? 'View Tables' : (c.id === 'rest_api' && restApiConnectors.length > 0 ? '+ Add Another API' : 'Configure Connection')}

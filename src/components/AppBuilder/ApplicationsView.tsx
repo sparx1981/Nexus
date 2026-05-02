@@ -150,8 +150,8 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
         </div>
         <button 
             onClick={() => setShowAddModal(true)}
-            className="px-4 py-2 text-neutral-500 dark:text-white font-bold rounded-xl flex items-center gap-2 hover:opacity-90 transition-all active:scale-95 shadow-lg"
-            style={{ background: 'var(--project-btn-standard)' }}
+            className="text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition-all active:scale-95 hover:opacity-90"
+            style={{ background: 'var(--color-primary)', boxShadow: '0 4px 14px 0 var(--color-primary-light)' }}
         >
           <Plus className="w-4 h-4" /> New Application
         </button>
@@ -232,8 +232,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                 <p className="text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto mb-6">Start by creating your first business application to streamline your workflows.</p>
                 <button 
                   onClick={() => setShowAddModal(true)}
-                  className="px-6 py-2 text-neutral-500 dark:text-white rounded-xl font-bold hover:opacity-90 transition-all active:scale-95 transition-all"
-                  style={{ background: 'var(--project-btn-standard)' }}
+                  className="text-white px-6 py-2 rounded-xl font-bold transition-all active:scale-95 hover:opacity-90" style={{ background: 'var(--color-primary)' }}
                 >Get Started</button>
             </div>
         )}
@@ -297,8 +296,8 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                                     type="button"
                                     onClick={handleNextStep}
                                     disabled={!newApp.name}
-                                    className="flex-1 py-3 text-neutral-500 dark:text-white font-bold rounded-2xl shadow-xl shadow-primary-200 hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
-                                    style={{ background: 'var(--project-btn-standard)' }}
+                                    className="flex-1 py-3 text-white font-bold rounded-2xl transition-all active:scale-95 disabled:opacity-50"
+                                    style={{ background: 'var(--color-primary)', boxShadow: '0 4px 14px 0 var(--color-primary-light)' }}
                                 >Continue to Data</button>
                             </div>
                         </div>
@@ -377,7 +376,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                                 <button 
                                     type="button"
                                     onClick={handleNextStep}
-                                    className="flex-1 py-3 bg-primary-600 text-white font-bold rounded-2xl shadow-xl shadow-primary-200 hover:bg-primary-700 active:scale-95 transition-all"
+                                    className="flex-1 py-3 text-white font-bold rounded-2xl active:scale-95 transition-all hover:opacity-90" style={{ background: 'var(--color-primary)' }}
                                 >Continue to Mode</button>
                             </div>
                         </div>
@@ -446,7 +445,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                                 <button 
                                     type="button"
                                     onClick={handleAddApp}
-                                    className="flex-1 py-3 bg-primary-600 text-white font-bold rounded-2xl shadow-xl shadow-primary-200 hover:bg-primary-700 active:scale-95 transition-all"
+                                    className="flex-1 py-3 text-white font-bold rounded-2xl active:scale-95 transition-all hover:opacity-90" style={{ background: 'var(--color-primary)' }}
                                 >{editingAppId ? 'Update Application' : 'Build Application'}</button>
                             </div>
                         </div>

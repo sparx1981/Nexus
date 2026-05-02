@@ -8,8 +8,7 @@ import {
   X,
   Search,
   Check,
-  MoreVertical,
-  Settings2
+  MoreVertical
 } from 'lucide-react';
 import { handleFirestoreError, OperationType } from '../../services/dataService';
 import { useAuthStore } from '../../store/authStore';
@@ -252,85 +251,6 @@ export function ProjectSettings() {
           </div>
         </div>
       )}
-      <div className="mt-12 space-y-12">
-        {/* Appearance Section */}
-        <section>
-          <div className="mb-6">
-            <h3 className="text-xl font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-              <Settings2 className="w-5 h-5 text-primary-600" /> Visual Designer
-            </h3>
-            <p className="text-sm text-neutral-500">Configure global appearance defaults for all applications in this workspace.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-neutral-200 dark:border-slate-800">
-            <div className="flex items-center justify-between col-span-full pb-4 border-b border-neutral-100 dark:border-slate-800">
-              <div>
-                <p className="text-sm font-black text-neutral-900 dark:text-white uppercase tracking-tight">Enable Application Headings</p>
-                <p className="text-xs text-neutral-400">Force a standardized branding header on all apps.</p>
-              </div>
-              <button 
-                onClick={() => updateDoc(doc(db, 'workspaces', selectedProjectId!), { enableApplicationHeadings: !projectData.enableApplicationHeadings })}
-                className={cn("w-12 h-6 rounded-full transition-all relative", projectData.enableApplicationHeadings ? "bg-primary-600" : "bg-neutral-200 dark:bg-slate-800")}
-              >
-                <div className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-all", projectData.enableApplicationHeadings ? "left-7" : "left-1")}></div>
-              </button>
-            </div>
-
-            {[
-              { key: 'headingBackgroundColour', label: 'Heading Background Colour' },
-              { key: 'applicationBackgroundColour', label: 'Application Background Colour' },
-              { key: 'componentPrimaryColour', label: 'Conponent Primary Color' },
-              { key: 'componentSecondaryColour', label: 'Conponent Secondary Color' },
-              { key: 'buttonColourStandard', label: 'Button Colour Standard' },
-              { key: 'buttonColourHover', label: 'Button Colour Hover' },
-              { key: 'buttonColourClicked', label: 'Button Colour Clicked' },
-            ].map(item => (
-              <div key={item.key} className="space-y-1.5">
-                <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">{item.label}</label>
-                <div className="flex gap-2">
-                  <input 
-                    type="color" 
-                    value={projectData[item.key] || '#000000'}
-                    onChange={(e) => updateDoc(doc(db, 'workspaces', selectedProjectId!), { [item.key]: e.target.value })}
-                    className="w-10 h-10 rounded-lg cursor-pointer bg-transparent"
-                  />
-                  <input 
-                    type="text"
-                    value={projectData[item.key] || '#000000'}
-                    onChange={(e) => updateDoc(doc(db, 'workspaces', selectedProjectId!), { [item.key]: e.target.value })}
-                    className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs font-mono outline-none dark:text-white"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Security Section */}
-        <section>
-          <div className="mb-6">
-            <h3 className="text-xl font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-              <Shield className="w-5 h-5 text-rose-600" /> Security & Privacy
-            </h3>
-            <p className="text-sm text-neutral-500">Manage workspace-level security policies and authentication requirements.</p>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-neutral-200 dark:border-slate-800">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-black text-neutral-900 dark:text-white uppercase tracking-tight">Require Sign-In</p>
-                <p className="text-xs text-neutral-400">Applications will require Nexus login before display.</p>
-              </div>
-              <button 
-                onClick={() => updateDoc(doc(db, 'workspaces', selectedProjectId!), { requireSignIn: !projectData.requireSignIn })}
-                className={cn("w-12 h-6 rounded-full transition-all relative", projectData.requireSignIn ? "bg-rose-600" : "bg-neutral-200 dark:bg-slate-800")}
-              >
-                <div className={cn("absolute top-1 w-4 h-4 rounded-full bg-white transition-all", projectData.requireSignIn ? "left-7" : "left-1")}></div>
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
     </div>
   );
 }

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import { 
   BarChart3, 
   Database, 
@@ -162,7 +163,7 @@ export default function App() {
   const [showProjectSettings, setShowProjectSettings] = useState(false);
   const { user, isAuthenticated, setUser, logout, selectedProjectId, setSelectedProjectId, setTrimbleAuth } = useAuthStore();
   const { settings: projectSettings, setSettings: setProjectSettings, loadSettings: loadProjectSettings } = useProjectSettingsStore();
-  const { currentWorkspace, fetchWorkspace } = useWorkspaceStore();
+  const { fetchWorkspace, currentWorkspace } = useWorkspaceStore();
   const { loadTables } = useSchemaStore();
   
   useEffect(() => {
@@ -193,18 +194,6 @@ export default function App() {
       return unsub;
     }
   }, [isAuthenticated, selectedProjectId, loadProjectSettings]);
-
-  // Apply Project Settings as CSS Variables
-  useEffect(() => {
-    const root = window.document.documentElement;
-    if (projectSettings.componentPrimaryColour) root.style.setProperty('--project-primary', projectSettings.componentPrimaryColour);
-    if (projectSettings.componentSecondaryColour) root.style.setProperty('--project-secondary', projectSettings.componentSecondaryColour);
-    if (projectSettings.buttonColourStandard) root.style.setProperty('--project-btn-standard', projectSettings.buttonColourStandard);
-    if (projectSettings.buttonColourHover) root.style.setProperty('--project-btn-hover', projectSettings.buttonColourHover);
-    if (projectSettings.buttonColourClicked) root.style.setProperty('--project-btn-active', projectSettings.buttonColourClicked);
-    if (projectSettings.applicationBackgroundColour) root.style.setProperty('--project-app-bg', projectSettings.applicationBackgroundColour);
-    if (projectSettings.headingBackgroundColour) root.style.setProperty('--project-heading-bg', projectSettings.headingBackgroundColour);
-  }, [projectSettings]);
 
   useSyncData();
   useSyncDashboards();
@@ -310,19 +299,24 @@ export default function App() {
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          {/* Project Name */}
-          {!sidebarCollapsed && currentWorkspace && (
-            <button 
-              onClick={() => setSelectedProjectId(null)}
-              className="w-full flex flex-col items-start px-3 py-2 mb-2 rounded-xl border border-transparent hover:border-neutral-200 hover:bg-neutral-50 transition-all text-left group"
-            >
-              <span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest leading-none mb-1">Active Project</span>
-              <div className="flex items-center gap-2 w-full">
-                <span className="text-sm font-black text-neutral-900 group-hover:text-primary-600 truncate flex-1">{currentWorkspace.name}</span>
-                <RotateCcw className="w-3 h-3 text-neutral-300 group-hover:text-primary-600" />
+          {/* Current Project */}
+          <button
+            onClick={() => setSelectedProjectId(null)}
+            title={sidebarCollapsed ? (currentWorkspace?.name || 'Switch Project') : undefined}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 mb-1 rounded-xl transition-all group ${sidebarCollapsed ? 'justify-center' : ''}`}
+            style={{ background: 'var(--color-primary-light)', border: '1px solid var(--color-primary)20' }}
+          >
+            <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0" style={{ background: 'var(--color-primary)' }}>
+              <FolderOpen className="w-3 h-3 text-white" />
+            </div>
+            {!sidebarCollapsed && (
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-0.5" style={{ color: 'var(--color-primary)' }}>Active Project</p>
+                <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{currentWorkspace?.name || 'My Project'}</p>
               </div>
-            </button>
-          )}
+            )}
+            {!sidebarCollapsed && <ChevronRight className="w-3 h-3 shrink-0 opacity-50" style={{ color: 'var(--color-primary)' }} />}
+          </button>
 
           <SidebarItem 
             icon={<Layers className="w-5 h-5" />} 
@@ -405,6 +399,15 @@ export default function App() {
             onClick={() => setActiveTab('reports')}
             collapsed={sidebarCollapsed}
           />
+
+          <SectionLabel label="Integrations" collapsed={sidebarCollapsed} />
+          <SidebarItem 
+            icon={<Plus className="w-5 h-5" />} 
+            label="Connectors" 
+            active={activeTab === 'connectors'} 
+            onClick={() => setActiveTab('connectors')}
+            collapsed={sidebarCollapsed}
+          />
         </nav>
 
         {/* Sidebar Footer */}
@@ -436,6 +439,7 @@ export default function App() {
               {activeTab === 'data' && "Data Studio"}
               {activeTab === 'workflows' && "Workflows"}
               {activeTab === 'dashboards' && "Dashboards"}
+              {activeTab === 'connectors' && "Connectors"}
               {activeTab === 'trimble' && "Trimble Connect"}
               {activeTab === 'settings' && "Settings"}
             </h1>
@@ -505,6 +509,65 @@ export default function App() {
                 <Palette className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
               </button>
             </div>
+
+            {/* Palette popup rendered via portal — guaranteed top z-index */}
+            {paletteOpen && ReactDOM.createPortal(
+              <div
+                ref={paletteRef}
+                className="rounded-2xl shadow-2xl p-4 border animate-in fade-in zoom-in-95 duration-150"
+                style={{
+                  position: 'fixed',
+                  top: palettePos.top,
+                  right: palettePos.right,
+                  width: 240,
+                  zIndex: 2147483647,
+                  background: 'var(--bg-surface)',
+                  borderColor: 'var(--border-color)',
+                }}
+              >
+                <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--text-secondary)' }}>Color Scheme</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    { name: 'ocean',    color: '#1A56DB', label: 'Ocean' },
+                    { name: 'garnet',   color: '#D3045D', label: 'Garnet' },
+                    { name: 'emerald',  color: '#34542C', label: 'Emerald' },
+                    { name: 'midnight', color: '#0C287B', label: 'Midnight' },
+                    { name: 'crimson',  color: '#D41414', label: 'Crimson' },
+                    { name: 'royal',    color: '#0C8EF4', label: 'Royal' },
+                    { name: 'sunset',   color: '#E85D04', label: 'Sunset' },
+                    { name: 'forest',   color: '#0D7A5F', label: 'Forest' },
+                    { name: 'lavender', color: '#7C3AED', label: 'Lavender' },
+                    { name: 'rose',     color: '#C4214A', label: 'Rose' },
+                    { name: 'slate',    color: '#334155', label: 'Slate' },
+                    { name: 'amber',    color: '#B45309', label: 'Amber' },
+                    { name: 'ruby',     color: '#D91B24', label: 'Ruby' },
+                    { name: 'copper',   color: '#9A3412', label: 'Copper' },
+                    { name: 'abyss',    color: '#06B6D4', label: 'Abyss' },
+                  ] as const).map(scheme => (
+                    <button
+                      key={scheme.name}
+                      onClick={() => { setColorScheme(scheme.name as any); setPaletteOpen(false); }}
+                      className="flex flex-col items-center gap-1 group/swatch"
+                      title={scheme.label}
+                    >
+                      <div
+                        className={cn(
+                          "w-8 h-8 rounded-full transition-all hover:scale-110",
+                          colorScheme === scheme.name && "scale-110"
+                        )}
+                        style={{
+                          backgroundColor: scheme.color,
+                          outline: colorScheme === scheme.name ? `3px solid ${scheme.color}` : 'none',
+                          outlineOffset: '2px',
+                        }}
+                      />
+                      <span className="text-[8px] font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>{scheme.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>,
+              document.body
+            )}
 
             {/* Notifications */}
             <div className="relative">
@@ -628,6 +691,7 @@ export default function App() {
           {activeTab === 'workflows' && <Workflows />}
           {activeTab === 'dashboards' && <DashboardSection />}
           {activeTab === 'reports' && <ReportSection />}
+          {activeTab === 'connectors' && <DataStudio defaultTab="sources" />}
           {activeTab === 'trimble' && <TrimbleConnectView onBack={() => setActiveTab('apps')} onConnect={() => setActiveTab('apps')} />}
           {activeTab === 'settings' && <ProjectSettings />}
         </div>
@@ -635,66 +699,8 @@ export default function App() {
         <HelpResources isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
         <AIAssistant isOpen={aiOpen} onClose={() => setAiOpen(false)} />
 
-        {/* Palette popup — fixed position, max z-index, no gap */}
-        {paletteOpen && (
-          <div
-            ref={paletteRef}
-            className="rounded-2xl shadow-2xl p-4 border animate-in fade-in zoom-in-95 duration-150"
-            style={{
-              position: 'fixed',
-              top: palettePos.top,
-              right: palettePos.right,
-              width: 240,
-              zIndex: 2147483647,
-              background: 'var(--bg-surface)',
-              borderColor: 'var(--border-color)',
-            }}
-          >
-            <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--text-secondary)' }}>Color Scheme</p>
-            <div className="grid grid-cols-5 gap-2">
-              {([
-                { name: 'ocean',    color: '#1A56DB', label: 'Ocean' },
-                { name: 'garnet',   color: '#D3045D', label: 'Garnet' },
-                { name: 'emerald',  color: '#34542C', label: 'Emerald' },
-                { name: 'midnight', color: '#0C287B', label: 'Midnight' },
-                { name: 'crimson',  color: '#D41414', label: 'Crimson' },
-                { name: 'royal',    color: '#0C8EF4', label: 'Royal' },
-                { name: 'sunset',   color: '#E85D04', label: 'Sunset' },
-                { name: 'forest',   color: '#0D7A5F', label: 'Forest' },
-                { name: 'lavender', color: '#7C3AED', label: 'Lavender' },
-                { name: 'rose',     color: '#C4214A', label: 'Rose' },
-                { name: 'slate',    color: '#334155', label: 'Slate' },
-                { name: 'amber',    color: '#B45309', label: 'Amber' },
-                { name: 'ruby',     color: '#D91B24', label: 'Ruby' },
-                { name: 'copper',   color: '#9A3412', label: 'Copper' },
-                { name: 'abyss',    color: '#06B6D4', label: 'Abyss' },
-              ] as const).map(scheme => (
-                <button
-                  key={scheme.name}
-                  onClick={() => { setColorScheme(scheme.name as any); setPaletteOpen(false); }}
-                  className="flex flex-col items-center gap-1 group/swatch"
-                  title={scheme.label}
-                >
-                  <div
-                    className={cn(
-                      "w-8 h-8 rounded-full transition-all hover:scale-110",
-                      colorScheme === scheme.name && "scale-110"
-                    )}
-                    style={{
-                      backgroundColor: scheme.color,
-                      outline: colorScheme === scheme.name ? `3px solid ${scheme.color}` : 'none',
-                      outlineOffset: '2px',
-                    }}
-                  />
-                  <span className="text-[8px] font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>{scheme.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {showProjectSettings && (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowProjectSettings(false)}></div>
             <div className="relative bg-white dark:bg-[#1E293B] rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-neutral-100 dark:border-neutral-800">
               <div className="px-8 py-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-800/10">

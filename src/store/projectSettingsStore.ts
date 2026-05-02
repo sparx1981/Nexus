@@ -40,26 +40,20 @@ interface ProjectSettingsStore {
 export const useProjectSettingsStore = create<ProjectSettingsStore>((set) => ({
   settings: DEFAULT_PROJECT_SETTINGS,
   loadSettings: () => {
-    const wsId = useAuthStore.getState().selectedProjectId;
-    if (!wsId) return () => {};
-    
-    const settingsRef = doc(db, 'workspaces', wsId);
+    const wsId = useAuthStore.getState().selectedProjectId || 'default';
+    const settingsRef = doc(db, 'workspaces', wsId, 'config', 'projectSettings');
     const unsub = onSnapshot(settingsRef, (snap) => {
       if (snap.exists()) {
-        const data = snap.data();
-        set({ settings: { 
-          ...DEFAULT_PROJECT_SETTINGS, 
-          ...data 
-        } as ProjectSettings });
+        set({ settings: { ...DEFAULT_PROJECT_SETTINGS, ...snap.data() } as ProjectSettings });
       }
     });
     return unsub;
   },
   setSettings: async (updates) => {
-    const wsId = useAuthStore.getState().selectedProjectId;
-    if (!wsId) return;
-    
-    const settingsRef = doc(db, 'workspaces', wsId);
-    await setDoc(settingsRef, updates, { merge: true });
+    const wsId = useAuthStore.getState().selectedProjectId || 'default';
+    set((state) => ({ settings: { ...state.settings, ...updates } }));
+    const settingsRef = doc(db, 'workspaces', wsId, 'config', 'projectSettings');
+    const current = useProjectSettingsStore.getState().settings;
+    await setDoc(settingsRef, { ...current, ...updates }, { merge: true });
   },
 }));

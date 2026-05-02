@@ -16,20 +16,6 @@ export interface UserDoc {
 
 const RELEASE_NOTES: ReleaseNote[] = [
   {
-    date: '2026-05-02',
-    changes: [
-      'UI Refinement: Fixed button text readability on light backgrounds for "New Application", "New Workflow", and "New Table" across the platform.',
-      'Stacking Context Fix: Isolated color palette and project settings modals to ensure they always appear on top of other elements.',
-      'Workflow Canvas Polish: Standardized action button styles and improved visual feedback on node interactions.',
-      'Workflow Designer v2: Implemented recursive, multi-level condition builder for complex automation logic.',
-      'New Action Nodes: Added "Google Chat" (webhook messages) and "Advanced HTTP" (custom method/headers/body) nodes.',
-      'Project Settings & Global Theming: Implemented project-wide settings for application headings, colors, and button styles. Changes apply automatically to all apps.',
-      'Project Navigation: Added active project name to the sidebar with a quick-switch action leading back to the Project Picker.',
-      'Enhanced Security: Integrated "Require Sign-In" project enforcement to ensure sensitive applications remain protected.',
-      'UX Polishing: Removed redundant "Integrations" and "Connectors" menu items to streamline the orchestration interface.'
-    ]
-  },
-  {
     date: '2026-05-01',
     changes: [
       'Advanced Query Builder: Implemented real-time Firestore query execution with CSV export functionality.',
@@ -60,42 +46,6 @@ const RELEASE_NOTES: ReleaseNote[] = [
 ];
 
 const USER_DOCS: UserDoc[] = [
-  {
-    id: 'google-chat-workflow',
-    category: 'Workflows',
-    title: 'Google Chat Action',
-    content: '1. In Workflow Designer, add a "Google Chat" node.\n2. In the configuration panel, paste your Google Chat Space Webhook URL.\n3. Compose your message. You can use dynamic tokens (e.g., {{name}}) from previous steps.\n4. (Optional) Provide a Thread Key to group messages.\n5. Click "Send Test Message" to verify connectivity.'
-  },
-  {
-    id: 'http-advanced-workflow',
-    category: 'Workflows',
-    title: 'HTTP Request (Advanced)',
-    content: '1. Add the "Advanced HTTP" node to your workflow.\n2. Choose an HTTP Method (GET, POST, PUT, PATCH, DELETE).\n3. Enter the endpoint URL.\n4. Define custom headers (e.g., Authorization: Bearer ...).\n5. For non-GET requests, provide the JSON Body payload. Tokens are supported.\n6. Use "Test Request" to preview the response structure.'
-  },
-  {
-    id: 'condition-builder-v2',
-    category: 'Workflows',
-    title: 'Advanced Condition Builder',
-    content: '1. Select a Condition node.\n2. Use "Add Condition" for simple checks.\n3. Use "Add Group" to create nested logic (AND/OR blocks).\n4. The workflow will follow the "True" handle if the logic passes, or the "False" handle if it fails.\n5. If the False handle is not connected, the execution terminates gracefully.'
-  },
-  {
-    id: 'project-settings-guide',
-    category: 'Project Setup',
-    title: 'Global Project Settings',
-    content: '1. Expand "Project Setup" in the sidebar.\n2. Click "Project Settings".\n3. Configure color schemes for headings, backgrounds, and buttons.\n4. Toggle "Enable Application Headings" to apply a standard header to all apps.\n5. Click "Save & Close" to push changes to all existing and new applications.'
-  },
-  {
-    id: 'project-switcher',
-    category: 'Navigation',
-    title: 'Switching Projects',
-    content: '1. Look for the "Active Project" card at the top of the sidebar.\n2. Click the project name or the rotate icon.\n3. You will be taken back to the Project Picker to select or create a different workspace.'
-  },
-  {
-    id: 'auth-enforcement',
-    category: 'Security',
-    title: 'Enforcing Sign-In',
-    content: '1. In Project Settings, scroll to the bottom.\n2. Enable "Require Sign-In".\n3. All applications within this project will now verify authentication before displaying any content, even in Preview mode.'
-  },
   {
     id: 'intro',
     category: 'Getting Started',
@@ -309,14 +259,6 @@ const DevSuiteTab = () => {
 };
 
 const DEV_DOCS = [
-    {
-        id: 'project-settings-store',
-        title: 'Project Settings API',
-        description: 'Consume global project-level design tokens and security settings.',
-        code: `const { settings } = useProjectSettingsStore();
-console.log('Heading Color:', settings.headingBackgroundColour);
-console.log('Sign-in Required:', settings.requireSignIn);`
-    },
     {
         id: 'auth',
         title: 'User Context API',
