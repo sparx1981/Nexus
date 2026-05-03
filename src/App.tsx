@@ -10,7 +10,7 @@ import {
   Database, 
   LayoutTemplate, 
   GitBranch, 
-  FileText, 
+  FileText, BookOpen, 
   Settings, 
   Search, 
   Bell, 
@@ -38,6 +38,8 @@ import { cn } from './lib/utils';
 import { DataStudio } from './components/DataStudio/DataStudio';
 import { HelpResources } from './components/HelpResources';
 import { AppBuilder } from './components/AppBuilder/AppBuilder';
+import { startEmailPolling, stopEmailPolling } from './services/workflowService';
+import { PublishedAppRunner } from './components/AppBuilder/PublishedAppRunner';
 import { AIAssistant } from './components/AIAssistant';
 import { DashboardSection } from './components/Dashboards/DashboardSection';
 import { useSyncDashboards } from './hooks/useSyncDashboards';
@@ -99,15 +101,22 @@ const NOTIFICATIONS = [
   { id: 3, title: 'Schema Change', message: 'Sarah modified the "Contacts" table schema.', time: '4h ago', read: true, type: 'info' },
 ];
 
-const SEARCH_RESULTS = [
-  { id: '1', title: 'Sales Dashboard', category: 'Dashboards', tab: 'dashboards' },
-  { id: '2', title: 'Inventory Schema', category: 'Data Studio', tab: 'data' },
-  { id: '3', title: 'Lead Rotation', category: 'Workflows', tab: 'workflows' },
-];
+// SEARCH_RESULTS removed — replaced with live project index in App component
 
 import { ReportSection } from './components/Reports/ReportSection';
 
-export default function App() {
+// Route to published app BEFORE any auth check
+function AppRouter() {
+  const RESERVED = ['auth', 'login', 'signup', 'oauth', 'api', 'static', 'assets'];
+  const path = window.location.pathname;
+  const legacyMatch = path.match(/^\/app\/([^/]+)$/);
+  const slugMatch   = path.match(/^\/([^/]+)\/([^/]+)$/);
+  if (legacyMatch) return <PublishedAppLookup appId={legacyMatch[1]} />;
+  if (slugMatch && !RESERVED.includes(slugMatch[1])) return <PublishedAppLookup workspaceSlug={slugMatch[1]} appId={slugMatch[2]} />;
+  return <App />;
+}
+
+function App() {
   const [activeTab, setActiveTab] = useState('apps');
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [currentAppName, setCurrentAppName] = useState<string | null>(null);
@@ -164,7 +173,7 @@ export default function App() {
   const { user, isAuthenticated, setUser, logout, selectedProjectId, setSelectedProjectId, setTrimbleAuth } = useAuthStore();
   const { settings: projectSettings, setSettings: setProjectSettings, loadSettings: loadProjectSettings } = useProjectSettingsStore();
   const { fetchWorkspace, currentWorkspace } = useWorkspaceStore();
-  const { loadTables } = useSchemaStore();
+  const { loadTables, tables: schemaTables } = useSchemaStore();
   
   useEffect(() => {
     if (editingAppId && selectedProjectId) {
@@ -180,6 +189,14 @@ export default function App() {
   }, [editingAppId, selectedProjectId]);
 
   
+  // Start email polling when workspace loads, restart on project change
+  useEffect(() => {
+    if (isAuthenticated && selectedProjectId) {
+      startEmailPolling(selectedProjectId).catch(console.error);
+      return () => stopEmailPolling(selectedProjectId);
+    }
+  }, [isAuthenticated, selectedProjectId]);
+
   useEffect(() => {
     if (isAuthenticated && selectedProjectId) {
       fetchWorkspace(selectedProjectId);
@@ -263,9 +280,24 @@ export default function App() {
     return () => unsub();
   }, [setUser]);
 
-  const filteredResults = searchQuery.length > 1 
-    ? SEARCH_RESULTS.filter(r => r.title.toLowerCase().includes(searchQuery.toLowerCase()))
-    : [];
+  // Live search index — built from all loaded project resources
+  const tables = schemaTables;
+  const filteredResults = React.useMemo(() => {
+    if (searchQuery.length < 2) return [];
+    const q = searchQuery.toLowerCase();
+    const results: { id: string; title: string; category: string; tab: string; icon: string }[] = [];
+    // Tables from schemaStore
+    tables.forEach(t => {
+      if (t.name?.toLowerCase().includes(q)) results.push({ id: `table-${t.id}`, title: t.name, category: 'Data Studio', tab: 'data', icon: '🗄️' });
+    });
+    // We don't have apps/workflows in App scope — navigate to the relevant tab and let them search there
+    if ('applications'.includes(q) || 'apps'.includes(q)) results.push({ id: 'nav-apps', title: 'Applications', category: 'Navigation', tab: 'apps', icon: '📱' });
+    if ('workflows'.includes(q) || 'automation'.includes(q)) results.push({ id: 'nav-wf', title: 'Workflows', category: 'Navigation', tab: 'workflows', icon: '⚡' });
+    if ('data'.includes(q) || 'tables'.includes(q) || 'studio'.includes(q)) results.push({ id: 'nav-data', title: 'Data Studio', category: 'Navigation', tab: 'data', icon: '🗄️' });
+    if ('dashboards'.includes(q) || 'reports'.includes(q)) results.push({ id: 'nav-dash', title: 'Dashboards', category: 'Navigation', tab: 'dashboards', icon: '📊' });
+    if ('settings'.includes(q) || 'project'.includes(q)) results.push({ id: 'nav-settings', title: 'Project Settings', category: 'Navigation', tab: 'settings', icon: '⚙️' });
+    return results.slice(0, 8);
+  }, [searchQuery, tables]);
 
   if (!isAuthenticated) {
     return <LoginPage />;
@@ -400,14 +432,7 @@ export default function App() {
             collapsed={sidebarCollapsed}
           />
 
-          <SectionLabel label="Integrations" collapsed={sidebarCollapsed} />
-          <SidebarItem 
-            icon={<Plus className="w-5 h-5" />} 
-            label="Connectors" 
-            active={activeTab === 'connectors'} 
-            onClick={() => setActiveTab('connectors')}
-            collapsed={sidebarCollapsed}
-          />
+
         </nav>
 
         {/* Sidebar Footer */}
@@ -439,7 +464,6 @@ export default function App() {
               {activeTab === 'data' && "Data Studio"}
               {activeTab === 'workflows' && "Workflows"}
               {activeTab === 'dashboards' && "Dashboards"}
-              {activeTab === 'connectors' && "Connectors"}
               {activeTab === 'trimble' && "Trimble Connect"}
               {activeTab === 'settings' && "Settings"}
             </h1>
@@ -468,7 +492,7 @@ export default function App() {
                               <span className="text-[10px] font-bold text-neutral-400 dark:text-slate-500 uppercase tracking-widest leading-none">Search Results</span>
                           </div>
                           <div className="max-h-64 overflow-y-auto">
-                              {filteredResults.length > 0 ? filteredResults.map(r => (
+                              {filteredResults.map(r => (
                                   <button 
                                     key={r.id}
                                     onClick={() => {
@@ -479,14 +503,18 @@ export default function App() {
                                     className="w-full flex items-center justify-between px-4 py-3 hover:bg-primary-50 dark:hover:bg-primary-950/20 text-left group transition-colors border-b border-neutral-100 dark:border-neutral-800 last:border-0"
                                   >
                                       <div>
-                                          <div className="text-sm font-bold text-neutral-900 dark:text-white group-hover:text-primary-600">{r.title}</div>
-                                          <div className="text-[10px] font-medium text-neutral-400 text-neutral-400">{r.category}</div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-sm font-bold text-neutral-900 dark:text-white group-hover:text-primary-600">{r.title}</span>
+                                          </div>
+                                          <div className="text-[10px] font-medium text-neutral-400">{r.category}</div>
                                       </div>
                                       <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-primary-600" />
                                   </button>
-                              )) : (
-                                  <div className="p-8 text-center text-neutral-400">
-                                      <p className="text-xs font-bold uppercase tracking-widest">No results found</p>
+                              ))}
+                              {filteredResults.length === 0 && (
+                                  <div className="px-4 py-6 text-center">
+                                      <p className="text-xs font-bold text-neutral-400 mb-1">No results for &quot;{searchQuery}&quot;</p>
+                                      <p className="text-[10px] text-neutral-300">Try searching for a table name, application, or module name</p>
                                   </div>
                               )}
                           </div>
@@ -691,7 +719,7 @@ export default function App() {
           {activeTab === 'workflows' && <Workflows />}
           {activeTab === 'dashboards' && <DashboardSection />}
           {activeTab === 'reports' && <ReportSection />}
-          {activeTab === 'connectors' && <DataStudio defaultTab="sources" />}
+          
           {activeTab === 'trimble' && <TrimbleConnectView onBack={() => setActiveTab('apps')} onConnect={() => setActiveTab('apps')} />}
           {activeTab === 'settings' && <ProjectSettings />}
         </div>
@@ -902,4 +930,58 @@ function PlaceholderModule({ name, description }: { name: string; description: s
       </div>
     </div>
   );
+}
+
+export default AppRouter;
+
+// Looks up which workspace an app belongs to, then renders it
+function PublishedAppLookup({ appId, workspaceSlug }: { appId: string; workspaceSlug?: string }) {
+  const [wsId, setWsId] = React.useState<string | null>(null);
+  const [notFound, setNotFound] = React.useState(false);
+
+  React.useEffect(() => {
+    import('./lib/firebase').then(({ db }) => {
+      import('firebase/firestore').then(({ collectionGroup, collection, query, where, getDocs }) => {
+        if (workspaceSlug) {
+          const wsQuery = query(collection(db, 'workspaces'), where('slug', '==', workspaceSlug));
+          getDocs(wsQuery).then(wsSnap => {
+            if (wsSnap.empty) {
+              const q = query(collectionGroup(db, 'apps'), where('published', '==', true));
+              return getDocs(q).then(snap => {
+                const match = snap.docs.find(d => d.id === appId);
+                if (!match) { setNotFound(true); return; }
+                setWsId(match.ref.path.split('/')[1]);
+              });
+            }
+            setWsId(wsSnap.docs[0].id);
+          }).catch(() => setNotFound(true));
+        } else {
+          const q = query(collectionGroup(db, 'apps'), where('published', '==', true));
+          getDocs(q).then(snap => {
+            const match = snap.docs.find(d => d.id === appId);
+            if (!match) { setNotFound(true); return; }
+            setWsId(match.ref.path.split('/')[1]);
+          }).catch(() => setNotFound(true));
+        }
+      });
+    });
+  }, [appId, workspaceSlug]);
+
+  if (notFound) return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+      <div className="text-center">
+        <p className="text-2xl font-bold text-neutral-900 mb-2">App not found</p>
+        <p className="text-neutral-500 text-sm">This application may not exist or hasn't been published.</p>
+      </div>
+    </div>
+  );
+  if (!wsId) return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"/>
+        <p className="text-sm text-neutral-400">Loading…</p>
+      </div>
+    </div>
+  );
+  return <PublishedAppRunner appId={appId} workspaceId={wsId} />;
 }

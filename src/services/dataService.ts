@@ -12,6 +12,7 @@ import {
   query,
   where
 } from 'firebase/firestore';
+import { triggerWorkflows } from './workflowService';
 
 export enum OperationType {
   CREATE = 'create',
@@ -94,6 +95,17 @@ export const dataService = {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+      // Resolve table name for workflow logs
+      let tableName = tableId;
+      try {
+        const tableSnap = await getDoc(doc(db, 'workspaces', wsId, 'tables', tableId));
+        if (tableSnap.exists()) tableName = (tableSnap.data() as any).name || tableId;
+      } catch (_) {}
+      // Fire workflows asynchronously
+      triggerWorkflows({
+        wsId, triggerType: 'record_created',
+        tableId, tableName, recordId: docRef.id, recordData: data
+      }).catch((e: any) => console.warn('[Workflow] Trigger error', e));
       return docRef.id;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, path);

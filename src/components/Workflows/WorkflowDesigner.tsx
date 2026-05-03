@@ -14,19 +14,23 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { 
-    Zap, Mail, RefreshCw, PlusCircle, Globe, Database, Cpu, Clock, Split, Repeat, Timer,
-    Save, Play, Settings2, X, Search, GitBranch, MessageSquare, Webhook,
+    Zap, Mail, RefreshCw, PlusCircle, Globe, Database, Cpu, Clock, Split, Repeat, Timer, Inbox, KeyRound, Eye, EyeOff, Paperclip, ArrowLeft, ChevronLeft, ChevronRight, RotateCcw, RotateCw,
+    Save, Play, Settings2, X, Search, GitBranch, MessageSquare, Webhook, ScrollText, ToggleLeft, ToggleRight,
     Plus, Trash2, Send, Loader2, AlertCircle, CheckCircle2, XCircle
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useSchemaStore } from '../../store/schemaStore';
+import { db } from '../../lib/firebase';
+import { doc, getDoc, setDoc, serverTimestamp, collection, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
+import { useAuthStore } from '../../store/authStore';
 
 const NODE_TYPES_CONFIG = {
     trigger: {
-        'record_created': { label: 'Record Created',   icon: <Database className="w-4 h-4"/>,      color: 'bg-blue-600',   textColor: 'text-blue-600'   },
-        'record_updated': { label: 'Record Updated',   icon: <RefreshCw className="w-4 h-4"/>,     color: 'bg-blue-600',   textColor: 'text-blue-600'   },
-        'scheduled':      { label: 'Scheduled',        icon: <Clock className="w-4 h-4"/>,         color: 'bg-blue-600',   textColor: 'text-blue-600'   },
-        'webhook':        { label: 'Webhook Received', icon: <Globe className="w-4 h-4"/>,         color: 'bg-blue-500',   textColor: 'text-blue-500'   },
+        'record_created':  { label: 'Record Created',   icon: <Database className="w-4 h-4"/>,      color: 'bg-blue-600',   textColor: 'text-blue-600'   },
+        'record_updated':  { label: 'Record Updated',   icon: <RefreshCw className="w-4 h-4"/>,     color: 'bg-blue-600',   textColor: 'text-blue-600'   },
+        'scheduled':       { label: 'Scheduled',        icon: <Clock className="w-4 h-4"/>,         color: 'bg-blue-600',   textColor: 'text-blue-600'   },
+        'webhook':         { label: 'Webhook Received', icon: <Globe className="w-4 h-4"/>,         color: 'bg-blue-500',   textColor: 'text-blue-500'   },
+        'received_email':  { label: 'Received Email',   icon: <Inbox className="w-4 h-4"/>,         color: 'bg-violet-600', textColor: 'text-violet-600' },
     },
     action: {
         'send_email':     { label: 'Send Email',       icon: <Mail className="w-4 h-4"/>,          color: 'bg-emerald-600',textColor: 'text-emerald-600'},
@@ -53,10 +57,26 @@ const WorkflowNode = ({ data, selected }: NodeProps<any>) => {
     const config = (NODE_TYPES_CONFIG as any)[data.category]?.[data.type];
     if (!config) return null;
     return (
-        <div className={cn("bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-xl min-w-[180px] overflow-hidden transition-all", selected ? "border-primary-600 ring-4 ring-primary-600/10" : "border-neutral-200 dark:border-slate-800")}>
-            <div className={cn("px-3 py-2 flex items-center gap-2 text-white", config.color)}>
-                {config.icon}
-                <span className="font-bold text-[11px] uppercase tracking-wider">{data.category}</span>
+        <div className={cn("bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-xl min-w-[180px] overflow-hidden transition-all group/node relative", selected ? "border-primary-600 ring-4 ring-primary-600/10" : "border-neutral-200 dark:border-slate-800")}>
+            <div className={cn("px-3 py-2 flex items-center justify-between gap-2 text-white", config.color)}>
+                <div className="flex items-center gap-2">
+                    {config.icon}
+                    <span className="font-bold text-[11px] uppercase tracking-wider">{data.category}</span>
+                </div>
+                {/* Delete button — visible on hover or when selected */}
+                {data.onDelete && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); data.onDelete(data._nodeId); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        title="Delete node"
+                        className={cn(
+                            "w-5 h-5 rounded-full bg-white/20 hover:bg-rose-500 flex items-center justify-center transition-all shrink-0",
+                            selected ? "opacity-100" : "opacity-0 group-hover/node:opacity-100"
+                        )}
+                    >
+                        <X className="w-3 h-3 text-white" />
+                    </button>
+                )}
             </div>
             <div className="p-4">
                 <span className="text-sm font-bold text-neutral-900 dark:text-white block mb-1">{config.label}</span>
@@ -70,9 +90,17 @@ const WorkflowNode = ({ data, selected }: NodeProps<any>) => {
 
 /* Condition node — dual output handles */
 const ConditionNode = ({ data, selected }: NodeProps<any>) => (
-    <div className={cn("bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-xl min-w-[200px] overflow-hidden transition-all relative", selected ? "border-amber-500 ring-4 ring-amber-500/10" : "border-neutral-200 dark:border-slate-800")}>
-        <div className="px-3 py-2 flex items-center gap-2 text-white bg-amber-500">
-            <Split className="w-4 h-4"/> <span className="font-bold text-[11px] uppercase tracking-wider">Logic</span>
+    <div className={cn("bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-xl min-w-[200px] overflow-hidden transition-all relative group/node", selected ? "border-amber-500 ring-4 ring-amber-500/10" : "border-neutral-200 dark:border-slate-800")}>
+        <div className="px-3 py-2 flex items-center justify-between gap-2 text-white bg-amber-500">
+            <div className="flex items-center gap-2"><Split className="w-4 h-4"/> <span className="font-bold text-[11px] uppercase tracking-wider">Logic</span></div>
+            {data.onDelete && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); data.onDelete(data._nodeId); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    title="Delete node"
+                    className={cn("w-5 h-5 rounded-full bg-white/20 hover:bg-rose-500 flex items-center justify-center transition-all shrink-0", selected ? "opacity-100" : "opacity-0 group-hover/node:opacity-100")}
+                ><X className="w-3 h-3 text-white" /></button>
+            )}
         </div>
         <div className="p-4 pb-7">
             <span className="text-sm font-bold text-neutral-900 dark:text-white block mb-1">Condition</span>
@@ -276,21 +304,89 @@ interface WorkflowDesignerProps { workflowId: string; onBack: () => void; }
 
 export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) {
     const { tables, restApiConnectors } = useSchemaStore();
+    const { selectedProjectId } = useAuthStore();
     const postApis = restApiConnectors.filter((c: any) => c.method === 'POST');
     const [selectedNodeId, setSelectedNodeId] = useState<string|null>(null);
     const [workflowName, setWorkflowName] = useState('Workflow Editor');
+    const [workflowStatus, setWorkflowStatus] = useState<'draft'|'active'>('draft');
     const [toast, setToast] = useState<string|null>(null);
+    const [showLogs, setShowLogs] = useState(false);
+    const [logs, setLogs] = useState<any[]>([]);
+    const [loadingLogs, setLoadingLogs] = useState(false);
+    const [configPanelOpen, setConfigPanelOpen] = useState(true);
 
-    useEffect(() => { if (workflowId) console.log('WorkflowDesigner: Loading', workflowId); }, [workflowId]);
+    // Undo/redo history for nodes/edges
+    const wfHistory = React.useRef<{ nodes: any[]; edges: any[] }[]>([]);
+    const wfHistoryIdx = React.useRef(-1);
+    const isUndoRedoing = React.useRef(false);
 
-    const initialNodes = [
-        { id:'node_1', type:'workflow',  position:{x:250,y:50},  data:{category:'trigger',type:'record_created',description:'Table: Users'} },
-        { id:'node_2', type:'workflow',  position:{x:250,y:250}, data:{category:'action',type:'send_email',description:'To: Welcome Email'} },
-    ];
-    const initialEdges = [{ id:'edge_1', source:'node_1', target:'node_2', animated:true, style:{stroke:'#1A56DB',strokeWidth:3}, markerEnd:{type:MarkerType.ArrowClosed,color:'#1A56DB'} }];
+    const pushHistory = React.useCallback((n: any[], e: any[]) => {
+        if (isUndoRedoing.current) return;
+        // Trim forward history
+        wfHistory.current = wfHistory.current.slice(0, wfHistoryIdx.current + 1);
+        wfHistory.current.push({ nodes: JSON.parse(JSON.stringify(n)), edges: JSON.parse(JSON.stringify(e)) });
+        if (wfHistory.current.length > 50) wfHistory.current.shift();
+        wfHistoryIdx.current = wfHistory.current.length - 1;
+    }, []);
 
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    const [nodes, setNodes, onNodesChange] = useNodesState([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+    const wfUndo = React.useCallback(() => {
+        if (wfHistoryIdx.current <= 0) return;
+        isUndoRedoing.current = true;
+        wfHistoryIdx.current -= 1;
+        const snap = wfHistory.current[wfHistoryIdx.current];
+        setNodes(snap.nodes); setEdges(snap.edges);
+        setTimeout(() => { isUndoRedoing.current = false; }, 0);
+    }, [setNodes, setEdges]);
+
+    const wfRedo = React.useCallback(() => {
+        if (wfHistoryIdx.current >= wfHistory.current.length - 1) return;
+        isUndoRedoing.current = true;
+        wfHistoryIdx.current += 1;
+        const snap = wfHistory.current[wfHistoryIdx.current];
+        setNodes(snap.nodes); setEdges(snap.edges);
+        setTimeout(() => { isUndoRedoing.current = false; }, 0);
+    }, [setNodes, setEdges]);
+
+    // Load workflow data from Firestore
+    useEffect(() => {
+        if (!workflowId || !selectedProjectId) return;
+        getDoc(doc(db, 'workspaces', selectedProjectId, 'workflows', workflowId)).then(snap => {
+            if (snap.exists()) {
+                const data = snap.data();
+                setWorkflowName(data.name || 'Workflow Editor');
+                setWorkflowStatus(data.status || 'draft');
+                if (data.nodes?.length > 0) {
+                    setNodes(data.nodes);
+                    setTimeout(() => pushHistory(data.nodes, data.edges || []), 0);
+                } else setNodes([
+                    { id:'node_1', type:'workflow', position:{x:250,y:50}, data:{category:'trigger',type:'record_created',description:'Table: Users'} },
+                    { id:'node_2', type:'workflow', position:{x:250,y:250}, data:{category:'action',type:'send_email',description:'To: Welcome Email'} },
+                ]);
+                if (data.edges?.length > 0) setEdges(data.edges);
+                else setEdges([{ id:'edge_1', source:'node_1', target:'node_2', animated:true, style:{stroke:'#1A56DB',strokeWidth:3}, markerEnd:{type:MarkerType.ArrowClosed,color:'#1A56DB'} }]);
+            }
+        });
+    }, [workflowId, selectedProjectId]);
+
+    // Load logs when log panel opens
+    useEffect(() => {
+        if (!showLogs || !selectedProjectId || !workflowId) return;
+        setLoadingLogs(true);
+        const q = query(
+            collection(db, 'workspaces', selectedProjectId, 'workflowLogs'),
+            orderBy('triggeredAt', 'desc'),
+            limit(50)
+        );
+        const unsub = onSnapshot(q, snap => {
+            const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setLogs(all.filter((l: any) => l.workflowId === workflowId));
+            setLoadingLogs(false);
+        });
+        return () => unsub();
+    }, [showLogs, selectedProjectId, workflowId]);
     const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
     const [selectedEdgeId, setSelectedEdgeId] = useState<string|null>(null);
 
@@ -298,7 +394,7 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
         const isTrue=params.sourceHandle==='true', isFalse=params.sourceHandle==='false';
         const stroke = isTrue ? '#16a34a' : isFalse ? '#dc2626' : '#1A56DB';
         setEdges(eds => addEdge({ ...params, id:`edge_${Date.now()}`, animated:true,
-            label: isTrue?'✓ True':isFalse?'✕ False':undefined,
+            label: isTrue?'✓ True':isFalse?'✕ False':null,
             labelStyle:{fontSize:9,fontWeight:700,fill:stroke},
             labelBgStyle:{fill:isTrue?'#f0fdf4':isFalse?'#fef2f2':'#eff6ff',fillOpacity:0.9},
             style:{stroke,strokeWidth:3}, markerEnd:{type:MarkerType.ArrowClosed,color:stroke} }, eds));
@@ -317,21 +413,32 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
         labelBgStyle:e.id===selectedEdgeId?{fill:'#fff1f1',fillOpacity:0.9}:e.labelBgStyle,
     }));
 
+    // Auto-expand/collapse config panel
+    useEffect(() => {
+        if (selectedNodeId || selectedEdgeId) setConfigPanelOpen(true);
+        else setConfigPanelOpen(false);
+    }, [selectedNodeId, selectedEdgeId]);
+
     useEffect(()=>{
         const handler=(e:KeyboardEvent)=>{
             if((e.key==='Delete'||e.key==='Backspace')&&document.activeElement?.tagName!=='INPUT'&&document.activeElement?.tagName!=='TEXTAREA'){
                 if(selectedEdgeId){ deleteSelectedEdge(); }
                 else if(selectedNodeId){
+                    // Push history before deletion
+                    pushHistory(nodes, edges);
                     setNodes(nds=>nds.filter(n=>n.id!==selectedNodeId));
                     setEdges(eds=>eds.filter(e=>e.source!==selectedNodeId&&e.target!==selectedNodeId));
                     setSelectedNodeId(null); showToast('Node deleted');
                 }
             }
             if(e.key==='Escape'){ setSelectedEdgeId(null); setSelectedNodeId(null); }
+            // Undo/Redo
+            if((e.metaKey||e.ctrlKey)&&e.key==='z'&&!e.shiftKey){ e.preventDefault(); wfUndo(); }
+            if((e.metaKey||e.ctrlKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))){ e.preventDefault(); wfRedo(); }
         };
         window.addEventListener('keydown',handler);
         return ()=>window.removeEventListener('keydown',handler);
-    },[selectedEdgeId,selectedNodeId,deleteSelectedEdge,setNodes,setEdges]);
+    },[selectedEdgeId,selectedNodeId,deleteSelectedEdge,setNodes,setEdges,wfUndo,wfRedo,pushHistory,nodes,edges]);
 
     const onDragOver = useCallback((e:any)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; },[]);
     const onDrop = useCallback((event:any)=>{
@@ -352,15 +459,80 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-neutral-50 dark:bg-slate-950 text-neutral-900 dark:text-slate-100 transition-colors duration-300">
             <div className="h-14 border-b border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center px-6 justify-between shrink-0 z-20">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
+                    {/* Back to Workflows */}
+                    <button onClick={onBack}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-all"
+                        title="Back to Workflows list"
+                    >
+                        <ArrowLeft className="w-3.5 h-3.5"/>
+                        <span className="hidden sm:inline">Workflows</span>
+                    </button>
+                    <div className="h-5 w-px bg-neutral-200 dark:bg-slate-700"/>
+                    {/* Undo / Redo */}
+                    <button onClick={wfUndo} disabled={wfHistoryIdx.current <= 0} title="Undo (Ctrl+Z)"
+                        className={cn("p-1.5 rounded-lg transition-colors", wfHistoryIdx.current > 0 ? "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-slate-800" : "text-neutral-200 dark:text-slate-700 cursor-not-allowed")}>
+                        <RotateCcw className="w-4 h-4"/>
+                    </button>
+                    <button onClick={wfRedo} disabled={wfHistoryIdx.current >= wfHistory.current.length - 1} title="Redo (Ctrl+Shift+Z)"
+                        className={cn("p-1.5 rounded-lg transition-colors", wfHistoryIdx.current < wfHistory.current.length - 1 ? "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-slate-800" : "text-neutral-200 dark:text-slate-700 cursor-not-allowed")}>
+                        <RotateCw className="w-4 h-4"/>
+                    </button>
+                    <div className="h-5 w-px bg-neutral-200 dark:bg-slate-700"/>
                     <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 flex items-center justify-center"><GitBranch className="w-6 h-6"/></div>
-                    <input type="text" value={workflowName} onChange={e=>setWorkflowName(e.target.value)} className="text-lg font-bold text-neutral-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 w-64" placeholder="Workflow Name..."/>
+                    <input type="text" value={workflowName} onChange={e=>setWorkflowName(e.target.value)} className="text-lg font-bold text-neutral-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 w-48" placeholder="Workflow Name..."/>
                 </div>
                 <div className="flex items-center gap-2">
                     <button onClick={()=>showToast('Workflow results: All stages passed ✓')} className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-all">
                         <Play className="w-4 h-4"/> Run Test
                     </button>
-                    <button onClick={()=>showToast('Workflow saved successfully')} className="flex items-center gap-2 px-4 py-1.5 text-xs font-bold text-white rounded-lg transition-all active:scale-95 hover:opacity-90" style={{background:'var(--color-primary)'}}>
+                    {/* Activate/Deactivate toggle */}
+                    <button
+                        onClick={async()=>{
+                            if(!selectedProjectId||!workflowId) return;
+                            const ns = workflowStatus==='active'?'draft':'active';
+                            await setDoc(doc(db,'workspaces',selectedProjectId,'workflows',workflowId),{status:ns},{merge:true});
+                            setWorkflowStatus(ns);
+                            showToast(ns==='active'?'Workflow activated — will now trigger on events':'Workflow set to draft');
+                        }}
+                        className={cn("flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all border",
+                            workflowStatus==='active'?"border-emerald-300 text-emerald-600 bg-emerald-50 hover:bg-emerald-100":"border-neutral-300 text-neutral-500 bg-white hover:bg-neutral-50"
+                        )}
+                    >
+                        {workflowStatus==='active'?<ToggleRight className="w-4 h-4"/>:<ToggleLeft className="w-4 h-4"/>}
+                        {workflowStatus==='active'?'Active':'Draft'}
+                    </button>
+                    <button
+                        onClick={()=>setShowLogs(s=>!s)}
+                        className={cn("flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all border",
+                            showLogs?"border-violet-300 text-violet-600 bg-violet-50":"border-neutral-200 text-neutral-500 bg-white hover:bg-neutral-50"
+                        )}
+                    >
+                        <ScrollText className="w-4 h-4"/> Logs
+                    </button>
+                    <button onClick={async()=>{
+                        if(!selectedProjectId||!workflowId) return;
+                        try {
+                            // Sanitize: Firestore rejects undefined values — replace with null
+                            const sanitize = (v: any): any => {
+                                if (v === undefined) return null;
+                                if (v === null || typeof v !== 'object') return v;
+                                if (Array.isArray(v)) return v.map(sanitize);
+                                return Object.fromEntries(
+                                    Object.entries(v)
+                                        .filter(([k]) => !['__rf','positionAbsolute','selected','dragging'].includes(k))
+                                        .map(([k,val]) => [k, sanitize(val)])
+                                );
+                            };
+                            await setDoc(doc(db,'workspaces',selectedProjectId,'workflows',workflowId),{
+                                name:workflowName,
+                                nodes: sanitize(nodes),
+                                edges: sanitize(edges),
+                                updatedAt:serverTimestamp()
+                            },{merge:true});
+                            showToast('Workflow saved successfully');
+                        } catch(e:any){ console.error('Save error',e); showToast('Save failed: '+e.message); }
+                    }} className="flex items-center gap-2 px-4 py-1.5 text-xs font-bold text-white rounded-lg transition-all active:scale-95 hover:opacity-90" style={{background:'var(--color-primary)'}}>
                         <Save className="w-4 h-4"/> Save Workflow
                     </button>
                 </div>
@@ -384,7 +556,19 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
 
                 {/* Canvas */}
                 <div className="flex-1 relative dark:bg-slate-950" onDrop={onDrop} onDragOver={onDragOver}>
-                    <ReactFlow nodes={nodes} edges={styledEdges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onInit={setReactFlowInstance} nodeTypes={nodeTypes}
+                    <ReactFlow nodes={nodes.map(n => ({
+                        ...n,
+                        data: {
+                            ...n.data,
+                            _nodeId: n.id,
+                            onDelete: (id: string) => {
+                                setNodes(nds => nds.filter(nd => nd.id !== id));
+                                setEdges(eds => eds.filter(e => e.source !== id && e.target !== id));
+                                setSelectedNodeId(null);
+                                showToast('Node deleted');
+                            }
+                        }
+                    }))} edges={styledEdges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onInit={setReactFlowInstance} nodeTypes={nodeTypes}
                         onNodeClick={(_,node)=>{ setSelectedNodeId(node.id); setSelectedEdgeId(null); }}
                         onEdgeClick={onEdgeClick} onPaneClick={()=>{ setSelectedNodeId(null); setSelectedEdgeId(null); }}
                         deleteKeyCode={null} fitView connectionLineStyle={{stroke:'#1A56DB',strokeWidth:2,strokeDasharray:'6 3'}}>
@@ -405,8 +589,19 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                     </ReactFlow>
                 </div>
 
-                {/* Properties panel */}
-                <aside className="w-80 bg-white dark:bg-slate-900 border-l border-neutral-200 dark:border-slate-800 flex flex-col shrink-0">
+                {/* Properties panel — collapsible */}
+                <aside className={cn("bg-white dark:bg-slate-900 border-l border-neutral-200 dark:border-slate-800 flex flex-col shrink-0 transition-all duration-300 relative",
+                    configPanelOpen ? "w-80" : "w-10"
+                )}>
+                    {/* Collapse toggle */}
+                    <button
+                        onClick={() => setConfigPanelOpen(p => !p)}
+                        className="absolute -left-3 top-1/2 -translate-y-1/2 w-6 h-6 bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-700 rounded-full flex items-center justify-center z-10 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors shadow-sm"
+                        title={configPanelOpen ? 'Collapse panel' : 'Expand panel'}
+                    >
+                        {configPanelOpen ? <ChevronRight className="w-3 h-3 text-neutral-400"/> : <ChevronLeft className="w-3 h-3 text-neutral-400"/>}
+                    </button>
+                    {configPanelOpen && (<>
                     <div className="p-4 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between">
                         <h3 className="font-bold text-neutral-900 dark:text-white text-sm">{selectedEdgeId?'Connection':'Step Config'}</h3>
                         <Settings2 className="w-4 h-4 text-neutral-400"/>
@@ -432,14 +627,15 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                             {selectedNode.data.type==='record_created' && (<div className="space-y-1.5 animate-in fade-in slide-in-from-top-2"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Target Table</label><select value={(selectedNode.data as any).tableId||''} onChange={e=>setNodes(nds=>nds.map(n=>n.id===selectedNode.id?{...n,data:{...n.data,tableId:e.target.value,description:`Table: ${tables.find(t=>t.id===e.target.value)?.name||e.target.value}`}}:n))} className={cfgCls}><option value="">Select table...</option>{tables.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>)}
                             {selectedNode.data.type==='webhook' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Webhook ID</label><input className={cfgCls} value={selectedNode.id} readOnly/></div><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Secret Key</label><input className={cfgCls+' font-mono'} type="password" defaultValue="sk_test_12345"/></div></div>)}
                             {selectedNode.data.type==='scheduled' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Frequency</label><select className={cfgCls}><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Custom Cron</option></select></div><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Time (UTC)</label><input type="time" className={cfgCls} defaultValue="09:00"/></div></div>)}
-                            {selectedNode.data.type==='send_email' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2">{[['Recipient','email@example.com'],['CC','manager@example.com'],['Subject','Welcome aboard!']].map(([l,p])=><div key={l} className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{l}</label><input className={cfgCls} placeholder={p}/></div>)}<div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Body</label><textarea className={cfgCls+' h-24 resize-none'} placeholder="Hello there..."/></div></div>)}
+                            {selectedNode.data.type==='send_email' && <EmailNodeConfig nodeId={selectedNode.id} data={selectedNode.data} setNodes={setNodes} cfgCls={cfgCls} />}
                             {['create_record','update_record'].includes(selectedNode.data.type) && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Target Table</label><select className={cfgCls}>{tables.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div></div>)}
                             {selectedNode.data.type==='ai_generate' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">AI Prompt</label><textarea className={cfgCls+' h-24 resize-none'} placeholder="Summarize the previous record..."/></div><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Output Variable</label><input className={cfgCls+' font-mono text-primary-600 font-bold'} defaultValue="{{ai_summary}}"/></div></div>)}
                             {selectedNode.data.type==='post_to_api' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Target API (POST)</label>{postApis.length===0?<p className="text-[10px] text-amber-500 italic">No POST APIs configured.</p>:<select value={(selectedNode.data as any).apiId||''} onChange={e=>setNodes(nds=>nds.map(n=>n.id===selectedNode.id?{...n,data:{...n.data,apiId:e.target.value,description:postApis.find((a:any)=>a.id===e.target.value)?.name||'API'}}:n))} className={cfgCls}><option value="">Select POST API...</option>{postApis.map((a:any)=><option key={a.id} value={a.id}>{a.name}</option>)}</select>}</div></div>)}
                             {selectedNode.data.type==='delay' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Duration</label><div className="flex gap-2"><input type="number" className={cfgCls} defaultValue="5"/><select className="w-24 px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-medium outline-none text-neutral-900 dark:text-white"><option>Min</option><option>Hours</option><option>Days</option></select></div></div>)}
 
                             {selectedNode.data.type==='condition'     && <ConditionBuilder   nodeId={selectedNode.id} data={selectedNode.data} onUpdate={(id,d)=>setNodes(nds=>nds.map(n=>n.id===id?{...n,data:{...n.data,...d}}:n))}/>}
-                            {selectedNode.data.type==='google_chat'   && <GoogleChatConfig   nodeId={selectedNode.id} data={selectedNode.data} onUpdate={updateNodeData}/>}
+                            {selectedNode.data.type==='google_chat'    && <GoogleChatConfig     nodeId={selectedNode.id} data={selectedNode.data} onUpdate={updateNodeData}/>}
+                            {selectedNode.data.type==='received_email'  && <ReceivedEmailConfig  nodeId={selectedNode.id} data={selectedNode.data} setNodes={setNodes} cfgCls={cfgCls}/>}
                             {selectedNode.data.type==='advanced_http' && <AdvancedHttpConfig nodeId={selectedNode.id} data={selectedNode.data} onUpdate={updateNodeData}/>}
                         </div>
                     ) : !selectedEdgeId && (
@@ -448,14 +644,462 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                             <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest">Select a node or connection to configure</p>
                         </div>
                     )}
+                    </>)}
                 </aside>
             </div>
+
+            {/* Logs panel */}
+            {showLogs && (
+                <div className="fixed inset-y-0 right-0 w-[480px] bg-white dark:bg-slate-900 border-l border-neutral-200 dark:border-slate-800 z-[150] flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
+                    <div className="px-5 py-4 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <ScrollText className="w-5 h-5 text-violet-500"/>
+                            <h3 className="font-bold text-neutral-900 dark:text-white text-sm">Workflow Logs</h3>
+                            <span className="px-2 py-0.5 text-[9px] font-bold bg-violet-100 dark:bg-violet-900/30 text-violet-600 rounded-full uppercase">{logs.length} entries</span>
+                        </div>
+                        <button onClick={()=>setShowLogs(false)} className="p-1.5 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-colors"><X className="w-4 h-4 text-neutral-400"/></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {loadingLogs && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-neutral-300"/></div>}
+                        {!loadingLogs && logs.length === 0 && (
+                            <div className="flex flex-col items-center justify-center py-16 text-center opacity-40">
+                                <ScrollText className="w-10 h-10 text-neutral-300 mb-3"/>
+                                <p className="text-xs font-bold text-neutral-500 uppercase tracking-widest">No logs yet</p>
+                                <p className="text-[10px] text-neutral-400 mt-1">Logs appear here when the workflow is triggered</p>
+                            </div>
+                        )}
+                        {logs.map((log:any)=>(
+                            <div key={log.id} className={cn("rounded-xl border overflow-hidden",
+                                log.status==='success'?"border-emerald-200 dark:border-emerald-900/30":"border-rose-200 dark:border-rose-900/30"
+                            )}>
+                                <div className={cn("px-4 py-2.5 flex items-center justify-between",
+                                    log.status==='success'?"bg-emerald-50 dark:bg-emerald-950/20":"bg-rose-50 dark:bg-rose-950/20"
+                                )}>
+                                    <div className="flex items-center gap-2">
+                                        {log.status==='success'
+                                            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600"/>
+                                            : <AlertCircle className="w-3.5 h-3.5 text-rose-600"/>}
+                                        <span className={cn("text-xs font-bold",log.status==='success'?"text-emerald-700":"text-rose-700")}>
+                                            {log.status==='success'?'Success':'Error'}
+                                        </span>
+                                        <span className="text-[10px] text-neutral-400 font-mono">{log.tableName || log.tableId}</span>
+                                    </div>
+                                    <span className="text-[9px] text-neutral-400 font-mono">
+                                        {log.triggeredAt?.toDate ? log.triggeredAt.toDate().toLocaleString() : '—'}
+                                    </span>
+                                </div>
+                                <div className="p-3 space-y-1.5 bg-white dark:bg-slate-900">
+                                    {(log.steps||[]).map((step:any, si:number)=>(
+                                        <div key={si} className="flex items-start gap-2 text-[10px]">
+                                            <span className={cn("mt-0.5 w-1.5 h-1.5 rounded-full shrink-0",
+                                                step.status==='success'?"bg-emerald-500":step.status==='error'?"bg-rose-500":"bg-neutral-300"
+                                            )}/>
+                                            <span className="font-bold text-neutral-600 dark:text-slate-400 w-28 shrink-0 truncate">{step.nodeLabel}</span>
+                                            <span className="text-neutral-400 dark:text-slate-500 font-mono flex-1">{step.message}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {toast && (
                 <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-neutral-900/90 backdrop-blur-sm text-white px-6 py-3 rounded-full shadow-2xl z-[200] animate-in fade-in slide-in-from-bottom-4 duration-300 font-medium text-sm flex items-center gap-3">
                     <Zap className="w-4 h-4 text-amber-400"/>{toast}
                 </div>
             )}
+        </div>
+    );
+}
+
+
+/* EmailNodeConfig — Gmail OAuth + webhook fallback */
+function EmailNodeConfig({ nodeId, data, setNodes, cfgCls }: { nodeId: string; data: any; setNodes: any; cfgCls: string }) {
+    const [connecting, setConnecting] = React.useState(false);
+
+    const updateData = (updates: Record<string, any>) => {
+        setNodes((nds: any[]) => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n));
+    };
+
+    const oauthHook = useGoogleClientId();
+    const handleGmailConnect = () => {
+        if (!oauthHook.clientId) return;
+        setConnecting(true);
+        openGmailOAuthPopup(
+            oauthHook.clientId,
+            (token, email) => { updateData({ gmailToken: token, gmailEmail: email, emailWebhook: '' }); setConnecting(false); },
+            (_err) => setConnecting(false)
+        );
+    };
+
+    const handleDisconnect = () => updateData({ gmailToken: null, gmailEmail: null });
+
+    const inp = cfgCls;
+
+    return (
+        <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+            {/* ── Google Account ── */}
+            <div className="rounded-xl border border-neutral-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-3 py-2 bg-neutral-50 dark:bg-slate-800 border-b border-neutral-200 dark:border-slate-700">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Send From (Google Account)</p>
+                </div>
+                <div className="p-3">
+                    {data.gmailToken ? (
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                </div>
+                                <div>
+                                    <p className="text-xs font-bold text-neutral-900 dark:text-white">Connected</p>
+                                    {data.gmailEmail && <p className="text-[10px] text-neutral-400 dark:text-slate-500 font-mono">{data.gmailEmail}</p>}
+                                </div>
+                            </div>
+                            <button onClick={handleDisconnect} className="text-[10px] font-bold text-rose-500 hover:underline">Disconnect</button>
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {/* Google Client ID setup — shown when not configured */}
+                            <div className="mb-2"><GoogleClientIdSetup {...oauthHook} /></div>
+                            <button
+                                onClick={handleGmailConnect}
+                                disabled={connecting || !oauthHook.clientId}
+                                className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-neutral-200 dark:border-slate-600 rounded-xl text-sm font-bold text-neutral-700 dark:text-slate-200 hover:border-blue-500 hover:text-blue-600 transition-all disabled:opacity-40 shadow-sm"
+                            >
+                                {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                                    </svg>
+                                )}
+                                {connecting ? 'Connecting…' : 'Connect Google Account'}
+                            </button>
+                            <p className="text-[9px] text-neutral-400 dark:text-slate-500 italic text-center">
+                                Sends emails from your Gmail account. Or use a webhook below.
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* ── Fallback: Webhook ── */}
+            {!data.gmailToken && (
+                <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">
+                        — or — Webhook URL
+                    </label>
+                    <input
+                        className={inp+' font-mono text-xs'}
+                        placeholder="https://your-email-api.com/send  (SendGrid, Mailgun, Zapier…)"
+                        value={data.emailWebhook||''}
+                        onChange={e=>updateData({ emailWebhook: e.target.value })}
+                    />
+                    <p className="text-[9px] text-neutral-400 dark:text-slate-500 italic leading-relaxed">
+                        POSTs {"{"}"to", "subject", "body", "cc"{"}"} JSON to your endpoint.
+                    </p>
+                </div>
+            )}
+
+            {/* ── Email fields ── */}
+            {[['emailTo','Recipient *','user@example.com'],['emailCc','CC (optional)','manager@example.com'],['emailSubject','Subject','Welcome aboard!']].map(([field,label,ph])=>(
+                <div key={field} className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">{label}</label>
+                    <input
+                        className={inp}
+                        placeholder={ph}
+                        value={data[field]||''}
+                        onChange={e=>updateData({ [field]: e.target.value, ...(field==='emailTo'?{description:`To: ${e.target.value}`}:{}) })}
+                    />
+                </div>
+            ))}
+            <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Body</label>
+                <textarea
+                    className={inp+' h-24 resize-none'}
+                    placeholder={"Hello {{record.name}}! A new record was created…"}
+                    value={data.emailBody||''}
+                    onChange={e=>updateData({ emailBody: e.target.value })}
+                />
+                <p className="text-[9px] text-neutral-400 dark:text-slate-500 italic">Use {"{{record.fieldName}}"} to insert record values.</p>
+            </div>
+        </div>
+    );
+}
+
+
+/* ── Shared Google OAuth helper ──────────────────────────────────────────── */
+/* Reads client ID from Firestore workspace settings → local storage fallback */
+async function loadGoogleClientId(selectedProjectId: string | null): Promise<string> {
+    if (!selectedProjectId) return '';
+    try {
+        const { getDoc, doc: fsDoc } = await import('firebase/firestore');
+        const snap = await getDoc(fsDoc(db, 'workspaces', selectedProjectId, 'settings', 'oauth'));
+        if (snap.exists()) return snap.data()?.googleClientId || '';
+    } catch (_) {}
+    return '';
+}
+
+async function saveGoogleClientId(selectedProjectId: string | null, clientId: string) {
+    if (!selectedProjectId) return;
+    const { setDoc, doc: fsDoc } = await import('firebase/firestore');
+    await setDoc(fsDoc(db, 'workspaces', selectedProjectId, 'settings', 'oauth'),
+        { googleClientId: clientId }, { merge: true });
+}
+
+function useGoogleClientId() {
+    const { selectedProjectId } = useAuthStore();
+    const [clientId, setClientId] = React.useState('');
+    const [saving, setSaving] = React.useState(false);
+    const [editing, setEditing] = React.useState(false);
+    const [draft, setDraft] = React.useState('');
+
+    React.useEffect(() => {
+        loadGoogleClientId(selectedProjectId).then(id => { setClientId(id); setDraft(id); });
+    }, [selectedProjectId]);
+
+    const save = async () => {
+        setSaving(true);
+        await saveGoogleClientId(selectedProjectId, draft);
+        setClientId(draft);
+        setSaving(false);
+        setEditing(false);
+    };
+
+    return { clientId, draft, setDraft, editing, setEditing, saving, save };
+}
+
+/* ── Shared Gmail OAuth popup ────────────────────────────────────────────── */
+function openGmailOAuthPopup(clientId: string, onSuccess: (token: string, email: string) => void, onError: (msg: string) => void) {
+    if (!clientId) {
+        onError('NO_CLIENT_ID');
+        return;
+    }
+    const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: `${window.location.origin}/oauth/google/callback`,
+        response_type: 'token',
+        scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send email profile',
+        include_granted_scopes: 'true',
+    });
+    const popup = window.open(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, 'GoogleOAuth', 'width=520,height=620,top=100,left=200');
+    if (!popup) { onError('Popup blocked — please allow popups for this site.'); return; }
+    const poll = setInterval(() => {
+        try {
+            if (!popup || popup.closed) { clearInterval(poll); return; }
+            const url = popup.location.href;
+            if (url.includes('access_token')) {
+                const hash = new URLSearchParams(popup.location.hash.slice(1));
+                const token = hash.get('access_token') || '';
+                const email = hash.get('email') || '';
+                if (token) { popup.close(); clearInterval(poll); onSuccess(token, email); }
+            }
+        } catch (_) { /* cross-origin — keep polling */ }
+    }, 300);
+}
+
+/* ── Google Client ID Setup widget ──────────────────────────────────────── */
+function GoogleClientIdSetup({ clientId, draft, setDraft, editing, setEditing, saving, save }: ReturnType<typeof useGoogleClientId>) {
+    const [show, setShow] = React.useState(false);
+    if (clientId && !editing) return (
+        <div className="flex items-center justify-between p-2 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-900/30">
+            <div className="flex items-center gap-2">
+                <KeyRound className="w-3.5 h-3.5 text-emerald-600 shrink-0"/>
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">Google OAuth configured</span>
+            </div>
+            <button onClick={()=>{ setDraft(clientId); setEditing(true); }} className="text-[10px] text-neutral-400 hover:text-neutral-600 font-bold">Change</button>
+        </div>
+    );
+    return (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-900/40 overflow-hidden">
+            <div className="px-3 py-2 bg-amber-50 dark:bg-amber-950/20 flex items-center gap-2">
+                <KeyRound className="w-3.5 h-3.5 text-amber-600 shrink-0"/>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">Google OAuth Client ID required</p>
+            </div>
+            <div className="p-3 space-y-2">
+                <p className="text-[9px] text-neutral-500 dark:text-slate-400 leading-relaxed">
+                    <strong>One-time setup:</strong> In <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="text-blue-500 underline">Google Cloud Console</a>, create an <em>OAuth 2.0 Client ID</em> (Web application type). Add <code className="bg-neutral-100 dark:bg-slate-700 px-1 rounded text-[9px]">{window.location.origin}</code> as an authorised JavaScript origin and <code className="bg-neutral-100 dark:bg-slate-700 px-1 rounded text-[9px]">{window.location.origin}/oauth/google/callback</code> as a redirect URI. Enable the Gmail API in your project.
+                </p>
+                <div className="flex gap-2">
+                    <input
+                        type={show?'text':'password'}
+                        placeholder="Paste Client ID here…"
+                        value={draft}
+                        onChange={e=>setDraft(e.target.value)}
+                        className="flex-1 px-3 py-1.5 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-lg text-[10px] font-mono outline-none"
+                    />
+                    <button onClick={()=>setShow(s=>!s)} className="p-1.5 text-neutral-400 hover:text-neutral-600">
+                        {show?<EyeOff className="w-3.5 h-3.5"/>:<Eye className="w-3.5 h-3.5"/>}
+                    </button>
+                    <button onClick={save} disabled={!draft||saving} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold disabled:opacity-50">
+                        {saving?'…':'Save'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+/* ── ReceivedEmailConfig ─────────────────────────────────────────────────── */
+function ReceivedEmailConfig({ nodeId, data, setNodes, cfgCls }: { nodeId: string; data: any; setNodes: any; cfgCls: string }) {
+    const { selectedProjectId } = useAuthStore();
+    const oauthHook = useGoogleClientId();
+    const [connecting, setConnecting] = React.useState(false);
+    const [testResult, setTestResult] = React.useState<string|null>(null);
+
+    const update = (updates: Record<string, any>) =>
+        setNodes((nds: any[]) => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, ...updates } } : n));
+
+    const handleConnect = () => {
+        if (!oauthHook.clientId) return;
+        setConnecting(true);
+        openGmailOAuthPopup(
+            oauthHook.clientId,
+            (token, email) => { update({ gmailToken: token, gmailEmail: email }); setConnecting(false); },
+            (err) => { setConnecting(false); console.error(err); }
+        );
+    };
+
+    const handleTest = async () => {
+        if (!data.gmailToken) return;
+        setTestResult('Checking inbox…');
+        try {
+            const filters: string[] = ['is:unread'];
+            if (data.filterFrom)    filters.push(`from:${data.filterFrom}`);
+            if (data.filterCc)      filters.push(`cc:${data.filterCc}`);
+            if (data.hasAttachment) filters.push('has:attachment');
+            const q = encodeURIComponent(filters.join(' '));
+            const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${q}&maxResults=5`, {
+                headers: { Authorization: `Bearer ${data.gmailToken}` }
+            });
+            if (res.status === 401) { setTestResult('Token expired — please reconnect.'); return; }
+            const json = await res.json();
+            const count = json.messages?.length || 0;
+            setTestResult(count > 0 ? `✓ Found ${count} matching email(s) in inbox` : '✓ Connected — no matching emails yet');
+        } catch (e: any) {
+            setTestResult(`Error: ${e.message}`);
+        }
+    };
+
+    return (
+        <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+
+            {/* ── How it works ── */}
+            <div className="p-3 bg-violet-50 dark:bg-violet-950/20 rounded-xl border border-violet-200 dark:border-violet-900/30 space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-violet-700 dark:text-violet-400">How it works</p>
+                <p className="text-[9px] text-violet-600 dark:text-violet-300 leading-relaxed">
+                    When this workflow is <strong>Active</strong>, Nexus polls your Gmail inbox on the configured schedule. Matching emails are converted to a JSON payload — use <code className="bg-violet-100 dark:bg-violet-900/40 px-1 rounded">{"{{email.from}}"}</code>, <code className="bg-violet-100 dark:bg-violet-900/40 px-1 rounded">{"{{email.subject}}"}</code>, <code className="bg-violet-100 dark:bg-violet-900/40 px-1 rounded">{"{{email.body}}"}</code>, <code className="bg-violet-100 dark:bg-violet-900/40 px-1 rounded">{"{{email.date}}"}</code> in downstream nodes.
+                </p>
+            </div>
+
+            {/* ── Google Client ID setup ── */}
+            <GoogleClientIdSetup {...oauthHook} />
+
+            {/* ── Gmail account connection ── */}
+            <div className="rounded-xl border border-neutral-200 dark:border-slate-700 overflow-hidden">
+                <div className="px-3 py-2 bg-neutral-50 dark:bg-slate-800 border-b border-neutral-200 dark:border-slate-700">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Monitor Gmail Account</p>
+                </div>
+                <div className="p-3">
+                    {data.gmailToken ? (
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600"/>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-neutral-900 dark:text-white">Connected</p>
+                                        {data.gmailEmail && <p className="text-[10px] font-mono text-neutral-400">{data.gmailEmail}</p>}
+                                    </div>
+                                </div>
+                                <button onClick={()=>update({ gmailToken: null, gmailEmail: null })} className="text-[10px] font-bold text-rose-500 hover:underline">Disconnect</button>
+                            </div>
+                            <button onClick={handleTest} className="w-full py-1.5 text-[10px] font-bold text-violet-600 border border-violet-200 rounded-lg hover:bg-violet-50 transition-colors">
+                                Test connection
+                            </button>
+                            {testResult && <p className="text-[9px] text-neutral-500 font-mono">{testResult}</p>}
+                        </div>
+                    ) : (
+                        <button
+                            onClick={handleConnect}
+                            disabled={connecting || !oauthHook.clientId}
+                            className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 bg-white dark:bg-slate-800 border-2 border-neutral-200 dark:border-slate-600 rounded-xl text-sm font-bold text-neutral-700 dark:text-slate-200 hover:border-violet-500 hover:text-violet-600 transition-all disabled:opacity-40 shadow-sm"
+                        >
+                            {connecting ? <Loader2 className="w-4 h-4 animate-spin"/> : (
+                                <svg className="w-4 h-4" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                            )}
+                            {connecting ? 'Connecting…' : 'Connect Google Account'}
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* ── Filters ── */}
+            <div className="space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Email Filters</p>
+                {[
+                    ['filterFrom','From (filter)','sender@example.com'],
+                    ['filterSubject','Subject contains','Invoice'],
+                    ['filterCc','CC includes','team@example.com'],
+                ] .map(([field, label, ph]) => (
+                    <div key={field} className="space-y-1">
+                        <label className="text-[9px] font-bold text-neutral-400 uppercase tracking-widest">{label}</label>
+                        <input className={cfgCls} placeholder={ph} value={data[field]||''} onChange={e=>update({ [field]: e.target.value })}/>
+                    </div>
+                ))}
+            </div>
+
+            {/* ── Attachment options ── */}
+            <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Attachments</p>
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                    <div onClick={()=>update({ hasAttachment: !data.hasAttachment })}
+                        className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${data.hasAttachment?'bg-violet-600':'bg-neutral-200 dark:bg-slate-700'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${data.hasAttachment?'translate-x-4':'translate-x-0'}`}/>
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold text-neutral-700 dark:text-slate-200">Must have attachment</p>
+                        <p className="text-[9px] text-neutral-400">Only trigger when email has file(s) attached</p>
+                    </div>
+                </label>
+                {data.hasAttachment && (
+                    <label className="flex items-center gap-3 cursor-pointer select-none ml-1">
+                        <div onClick={()=>update({ downloadAttachment: !data.downloadAttachment })}
+                            className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${data.downloadAttachment?'bg-violet-600':'bg-neutral-200 dark:bg-slate-700'}`}>
+                            <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${data.downloadAttachment?'translate-x-4':'translate-x-0'}`}/>
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-neutral-700 dark:text-slate-200 flex items-center gap-1.5">
+                                <Paperclip className="w-3 h-3 text-violet-500"/> Download attachment
+                            </p>
+                            <p className="text-[9px] text-neutral-400">Fetches attachment as base64 → <code>{"{{email.attachmentData}}"}</code></p>
+                        </div>
+                    </label>
+                )}
+            </div>
+
+            {/* ── Poll interval ── */}
+            <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400 block">Poll Interval</label>
+                <select
+                    value={data.pollInterval||'5'}
+                    onChange={e=>update({ pollInterval: e.target.value })}
+                    className={cfgCls}
+                >
+                    <option value="1">Every 1 minute</option>
+                    <option value="5">Every 5 minutes</option>
+                    <option value="15">Every 15 minutes</option>
+                    <option value="30">Every 30 minutes</option>
+                    <option value="60">Every hour</option>
+                </select>
+                <p className="text-[9px] text-neutral-400 italic">Polling runs while this browser tab is open. For 24/7 polling, deploy a Nexus backend worker.</p>
+            </div>
+
         </div>
     );
 }

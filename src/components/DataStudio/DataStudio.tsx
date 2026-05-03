@@ -196,12 +196,10 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
                           />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-3 max-w-xs mx-auto w-full">
                         {[
-                          { id: 'internal', label: 'Internal', icon: <Database className="w-4 h-4" /> },
-                          { id: 'csv', label: 'CSV/Excel', icon: <FileSpreadsheet className="w-4 h-4" /> },
-                          { id: 'api', label: 'REST API', icon: <Globe className="w-4 h-4" /> },
-                          { id: 'trimble', label: 'Trimble', icon: <Box className="w-4 h-4" /> },
+                          { id: 'internal', label: 'Internal Table', icon: <Database className="w-4 h-4" />, desc: 'Create a blank table from scratch' },
+                          { id: 'csv', label: 'Import CSV/Excel', icon: <FileSpreadsheet className="w-4 h-4" />, desc: 'Upload a spreadsheet file' },
                         ].map(type => (
                           <button
                             key={type.id}
@@ -218,12 +216,21 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
                               "w-8 h-8 rounded-lg flex items-center justify-center",
                               newTableType === type.id ? "bg-primary-100 text-primary-600 dark:bg-primary-900" : "bg-neutral-100 text-neutral-400 dark:bg-neutral-800"
                             )}>{type.icon}</div>
-                            <span className="text-xs font-bold">{type.label}</span>
+                            <div>
+                              <span className="text-xs font-bold block">{type.label}</span>
+                              {'desc' in type && <span className="text-[9px] text-neutral-400 font-medium mt-0.5 block">{(type as any).desc}</span>}
+                            </div>
                           </button>
                         ))}
                       </div>
 
-                      <div className="flex gap-3 pt-6">
+                      <p className="text-center text-[10px] text-neutral-400 font-medium">
+                        Need to connect external data?{' '}
+                        <button type="button" onClick={() => setShowAddTable(false)} className="text-primary-600 hover:underline font-bold">
+                          Use Data Studio → Sources →
+                        </button>
+                      </p>
+                      <div className="flex gap-3 pt-2">
                           <button 
                             type="button"
                             onClick={() => setShowAddTable(false)}

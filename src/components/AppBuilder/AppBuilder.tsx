@@ -38,7 +38,9 @@ import {
     Maximize,
     Rows,
     AlignJustify,
-    RotateCcw
+    RotateCcw,
+  ArrowLeft,
+    RotateCw
 } from 'lucide-react';
 import { useProjectSettingsStore } from '../../store/projectSettingsStore';
 import { 
@@ -56,6 +58,8 @@ import {
 import { cn } from '../../lib/utils';
 import { motion } from 'motion/react';
 import { useBuilderStore } from '../../store/builderStore';
+import { AppFieldMapper, buildParamUrl } from './AppFieldMapper';
+import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useAuthStore } from '../../store/authStore';
 import { dataService } from '../../services/dataService';
 import { handleFirestoreError, OperationType } from '../../services/dataService';
@@ -106,16 +110,25 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
     const [customWidth, setCustomWidth] = useState(1200);
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
     const [showPreview, setShowPreview] = useState(false);
+    const [showShortcuts, setShowShortcuts] = useState(false);
+    const [previewFormState, setPreviewFormState] = useState<Record<string, any>>({});
     const [showPublish, setShowPublish] = useState(false);
     const [showAppSettings, setShowAppSettings] = useState(false);
     const [showManageDatasources, setShowManageDatasources] = useState(false);
     const [publishStatus, setPublishStatus] = useState<'idle' | 'deploying' | 'success'>('idle');
     const [toast, setToast] = useState<string | null>(null);
     const [currentAppData, setCurrentAppData] = useState<any>(null);
+    const [allApps, setAllApps] = useState<any[]>([]);
     const [formState, setFormState] = useState<Record<string, any>>({});
     const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(true);
 
     const { selectedProjectId } = useAuthStore();
+    const { currentWorkspace } = useWorkspaceStore();
+
+    const workspaceSlug = React.useMemo(() => {
+        const name = currentWorkspace?.name || selectedProjectId || 'workspace';
+        return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }, [currentWorkspace, selectedProjectId]);
     const { 
         components, 
         selectedId, 
@@ -127,6 +140,8 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         setCurrentAppId,
         undo,
         redo,
+        history,
+        historyIndex,
         setComponents,
         moveComponent,
         updateComponentSize,
@@ -151,7 +166,7 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         activationConstraint: { distance: 5 }
     }));
 
-    const showToast = useCallback((message: string) => {
+    const showToast = useCallback((message: string, _type?: string) => {
         setToast(message);
         setTimeout(() => setToast(null), 3000);
     }, []);
@@ -208,6 +223,16 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
     };
 
     // Keyboard shortcuts
+    // Listen for toast events from nested components (e.g. RenderComponent submit handler)
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (detail?.msg) showToast(detail.msg, detail.type || 'info');
+        };
+        window.addEventListener('nexus-toast', handler);
+        return () => window.removeEventListener('nexus-toast', handler);
+    }, []);
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
@@ -216,7 +241,10 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
             }
             if ((e.metaKey || e.ctrlKey) && e.key === 's') {
                 e.preventDefault();
-                showToast('Changes saved locally');
+                handleSave();
+            }
+            if (e.key === '?' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+                setShowShortcuts(s => !s);
             }
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (selectedId && (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA')) {
@@ -256,12 +284,27 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
             const type = data?.type;
 
             if (type) {
+                // Compute drop position relative to the canvas inner area (p-8 = 32px padding)
+                let dropX = 20, dropY = 20;
+                if (isMainCanvas) {
+                    const canvasEl = (window as any).__nexusCanvasRef as HTMLDivElement | null;
+                    if (canvasEl && (event as any).activatorEvent) {
+                        const rect = canvasEl.getBoundingClientRect();
+                        const ae = (event as any).activatorEvent as PointerEvent;
+                        const delta = (event as any).delta as { x: number; y: number };
+                        const pointerX = ae.clientX + (delta?.x || 0);
+                        const pointerY = ae.clientY + (delta?.y || 0);
+                        // Subtract canvas origin and the 32px (p-8) inner padding
+                        dropX = Math.max(0, Math.round(pointerX - rect.left - 32));
+                        dropY = Math.max(0, Math.round(pointerY - rect.top - 32));
+                    }
+                }
                 const newComponent: ComponentConfig = {
                     id: `${type}_${Math.random().toString(36).substr(2, 9)}`,
                     type,
                     label: data.label,
                     properties: getDefaultProperties(type),
-                    position: isMainCanvas ? { x: 20, y: 20 } : { x: 0, y: 0 },
+                    position: isMainCanvas ? { x: dropX, y: dropY } : { x: 0, y: 0 },
                     size: {
                         width: type === 'table' || type === 'bar_chart' || type === 'line_chart' || type === 'pie_chart' ? 500 : 280,
                         height: type === 'table' || type === 'bar_chart' || type === 'line_chart' || type === 'pie_chart' ? 300 : 80
@@ -283,6 +326,8 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
             case 'select': return { label: 'Dropdown', options: [{ value: '1', label: 'Option 1' }, { value: '2', label: 'Option 2' }] };
             case 'toggle': return { label: 'Toggle', options: ['On', 'Off'] };
             case 'table': return { dataSource: '' };
+            case 'image': return { src: '', alt: '', fit: 'cover' };
+            case 'badge': return { label: 'Badge', tags: [{ label: 'New' }, { label: 'Active' }], variant: 'solid', color: '#1A56DB', textColor: '#ffffff', size: 'md' };
             default: return {};
         }
     };
@@ -291,12 +336,26 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         return <ApplicationsView onSelectApp={(id) => setCurrentAppId(id)} />;
     }
 
-    const handlePublish = () => {
+    const handlePublish = async () => {
         setShowPublish(true);
         setPublishStatus('deploying');
-        setTimeout(() => {
-            setPublishStatus('success');
-        }, 2000);
+        if (selectedProjectId && currentAppId) {
+            try {
+                // Save the workspace slug so URL lookups work
+                await setDoc(doc(db, 'workspaces', selectedProjectId), { slug: workspaceSlug }, { merge: true });
+                // Publish the app
+                await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', currentAppId), {
+                    published: true,
+                    publishedUrl: `/${workspaceSlug}/${currentAppId}`,
+                    workspaceSlug,
+                    publishedAt: serverTimestamp(),
+                    // Snapshot of components at publish time — live edits don't affect published version
+                    publishedComponents: JSON.parse(JSON.stringify(components)),
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+            } catch(e) { console.error('Publish error', e); }
+        }
+        setTimeout(() => { setPublishStatus('success'); }, 1500);
     };
 
     return (
@@ -325,10 +384,21 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                         <div className="flex items-center gap-4">
                             <button 
                                 onClick={() => setCurrentAppId(null)}
-                                className="p-1.5 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg text-neutral-400 group transition-colors"
-                                title="Back to All Applications"
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-all"
+                                title="Back to Applications list"
                             >
-                                <X className="w-5 h-5 group-hover:text-neutral-900 dark:group-hover:text-white transition-colors" />
+                                <ArrowLeft className="w-4 h-4" />
+                                <span className="hidden sm:inline">Applications</span>
+                            </button>
+                            <div className="h-6 w-[1px] bg-neutral-200 dark:bg-slate-800"></div>
+                            {/* Undo / Redo */}
+                            <button onClick={undo} disabled={historyIndex <= 0} title="Undo (Ctrl+Z)"
+                                className={cn("p-1.5 rounded-lg transition-colors", historyIndex > 0 ? "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-slate-800 hover:text-neutral-900" : "text-neutral-200 dark:text-slate-700 cursor-not-allowed")}>
+                                <RotateCcw className="w-4 h-4" />
+                            </button>
+                            <button onClick={redo} disabled={historyIndex >= history.length - 1} title="Redo (Ctrl+Shift+Z)"
+                                className={cn("p-1.5 rounded-lg transition-colors", historyIndex < history.length - 1 ? "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-slate-800 hover:text-neutral-900" : "text-neutral-200 dark:text-slate-700 cursor-not-allowed")}>
+                                <RotateCw className="w-4 h-4" />
                             </button>
                             <div className="h-6 w-[1px] bg-neutral-200 dark:bg-slate-800"></div>
                             <div className="flex items-center gap-1 bg-neutral-100 dark:bg-slate-800 p-1 rounded-lg">
@@ -381,18 +451,20 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                     </div>
 
                     {/* The Virtual Canvas */}
-                    <div className="flex-1 overflow-auto p-12 flex justify-center items-start pattern-grid">
-                        <Canvas viewMode={viewMode} appData={currentAppData} customWidth={customWidth} />
+                    <div className="flex-1 overflow-auto p-12 flex justify-center items-start pattern-grid" style={{ background: '#E5E7EB' }}>
+                        <Canvas viewMode={viewMode} appData={currentAppData} customWidth={customWidth} onCanvasRef={el => { (window as any).__nexusCanvasRef = el; }} />
                     </div>
                 </div>
 
                 {/* Right Properties Panel */}
                 <aside className={cn(
-                  "border-l flex flex-col shrink-0 transition-all duration-300",
+                  "border-l flex flex-col shrink-0 transition-all duration-300 h-full overflow-hidden",
                   propertiesPanelOpen ? "w-72" : "w-12"
                 )} style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
                     {propertiesPanelOpen && (
-                      <PropertiesPanel dataSourceId={currentAppData?.dataSourceId} unifiedDatasources={unifiedDatasources} />
+                      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                        <PropertiesPanel dataSourceId={currentAppData?.dataSourceId} unifiedDatasources={unifiedDatasources} currentAppData={currentAppData} />
+                      </div>
                     )}
                     {/* Collapse button at bottom, matching left sidebar style */}
                     <div className="mt-auto p-2" style={{ borderTop: '1px solid var(--border-color)' }}>
@@ -407,6 +479,41 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                     </div>
                 </aside>
             </div>
+
+            {/* Keyboard Shortcuts Modal */}
+            {showShortcuts && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-neutral-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
+                        <div className="px-5 py-4 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Keyboard Shortcuts</h3>
+                            <button onClick={() => setShowShortcuts(false)} className="p-1.5 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                                <X className="w-4 h-4 text-neutral-400" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-2">
+                            {[
+                                ['Ctrl + Z', 'Undo'],
+                                ['Ctrl + Shift + Z', 'Redo'],
+                                ['Ctrl + S', 'Save to cloud'],
+                                ['Delete / Backspace', 'Delete selected component'],
+                                ['Escape', 'Clear selection'],
+                                ['Ctrl + Click', 'Add to multi-select'],
+                                ['Drag on empty canvas', 'Rubber-band select'],
+                                ['Right-click selection', 'Align / Delete menu'],
+                                ['?', 'Toggle this shortcut guide'],
+                            ].map(([key, action]) => (
+                                <div key={key} className="flex items-center justify-between gap-4 py-1.5 border-b border-neutral-50 dark:border-slate-800/50 last:border-0">
+                                    <span className="text-xs text-neutral-500 dark:text-slate-400 font-medium">{action}</span>
+                                    <kbd className="px-2 py-0.5 bg-neutral-100 dark:bg-slate-800 text-neutral-700 dark:text-slate-300 text-[10px] font-mono font-bold rounded-md border border-neutral-200 dark:border-slate-700 whitespace-nowrap">{key}</kbd>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="px-5 py-3 bg-neutral-50 dark:bg-slate-800/50 border-t border-neutral-200 dark:border-slate-800 text-center">
+                            <p className="text-[10px] text-neutral-400 font-medium">Press <kbd className="px-1.5 py-0.5 bg-neutral-200 dark:bg-slate-700 rounded text-[9px] font-mono">?</kbd> to open / close</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Drag Overlay */}
             <DragOverlay dropAnimation={{
@@ -434,13 +541,25 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPreview(false)}></div>
                     <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl h-full flex flex-col overflow-hidden border border-neutral-200 dark:border-slate-800 transition-colors duration-300">
                         <div className="h-14 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between px-6 shrink-0 bg-neutral-50 dark:bg-slate-900/50">
-                            <h3 className="font-bold text-neutral-900 dark:text-white">Application Preview</h3>
-                            <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-neutral-200 dark:hover:bg-slate-800 rounded-full transition-colors">
-                                <X className="w-5 h-5 text-neutral-500 dark:text-slate-400" />
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <h3 className="font-bold text-neutral-900 dark:text-white">Application Preview</h3>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-primary-50 text-primary-600 border border-primary-200">
+                                    {currentAppData?.mode?.replace('_',' ') || 'view only'}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setPreviewFormState({})} title="Reset form fields"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 rounded-lg transition-colors">
+                                    <RotateCcw className="w-3.5 h-3.5"/> Reset Form
+                                </button>
+                                <div className="h-5 w-[1px] bg-neutral-200"/>
+                                <button onClick={() => setShowPreview(false)} className="p-2 hover:bg-neutral-200 dark:hover:bg-slate-800 rounded-full transition-colors">
+                                    <X className="w-5 h-5 text-neutral-500 dark:text-slate-400" />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex-1 overflow-auto p-8 transition-colors duration-300" style={{ background: 'var(--bg-primary)' }}>
-                             <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" style={{ background: currentAppData?.bgColor || 'var(--bg-surface)', borderColor: 'var(--border-color)', minHeight: 800 }}>
+                        <div className="flex-1 overflow-auto p-8 transition-colors duration-300" style={{ background: '#E5E7EB' }}>
+                             <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" style={{ background: currentAppData?.bgColor || '#FFFFFF', borderColor: 'var(--border-color)', minHeight: 800 }}>
                                  {currentAppData?.headerText && (
                                      <div className="w-full px-6 py-3 flex items-center shrink-0"
                                           style={{ background: currentAppData?.headerColor || 'var(--color-primary)' }}>
@@ -508,8 +627,10 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                                     <p className="text-neutral-500 dark:text-slate-400 mb-6 font-medium">Your app is now live and ready for production.</p>
                                     
                                     <div className="bg-neutral-50 dark:bg-slate-800 p-4 rounded-xl border border-neutral-200 dark:border-slate-700 mb-8 flex items-center justify-between">
-                                        <span className="text-sm font-mono text-neutral-600 dark:text-slate-300">https://nexus.app/my-crm-app</span>
-                                        <button onClick={() => showToast('URL copied')} className="text-primary-600 dark:text-primary-400 text-xs font-bold hover:underline">Copy URL</button>
+                                        <span className="text-sm font-mono text-neutral-600 dark:text-slate-300 truncate flex-1 mr-3">
+                                            {window.location.origin}/{workspaceSlug}/{currentAppId}
+                                        </span>
+                                        <button onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/${workspaceSlug}/${currentAppId}`); showToast('URL copied!'); }} className="text-primary-600 dark:text-primary-400 text-xs font-bold hover:underline shrink-0">Copy URL</button>
                                     </div>
 
                                     <button 
@@ -692,7 +813,85 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                                 </div>
                             </div>
 
-                            <div className="pt-6 mt-6 border-t border-neutral-100 dark:border-neutral-800 flex justify-end">
+                            {/* ── After Action section ─────────────────────────────── */}
+                            <div className="pt-6 mt-6 border-t border-neutral-100 dark:border-neutral-800">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 dark:text-neutral-500 pb-4">After Action — what happens after Submit is clicked</p>
+                                <div className="grid grid-cols-2 gap-6">
+                                    {/* Action picker */}
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">After Action</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {[
+                                                { id: 'nothing',  label: 'Do Nothing'       },
+                                                { id: 'app',      label: 'Go To Application' },
+                                                { id: 'url',      label: 'Go To URL'         },
+                                                { id: 'workflow', label: 'Trigger Workflow'  },
+                                            ].map(opt => (
+                                                <button key={opt.id} type="button"
+                                                    onClick={() => handleUpdateAppSettings({ afterAction: opt.id })}
+                                                    className={cn("p-2.5 rounded-xl border-2 text-[10px] font-bold transition-all text-left",
+                                                        (currentAppData?.afterAction || 'nothing') === opt.id
+                                                            ? "bg-primary-600 border-primary-600 text-white shadow-lg shadow-primary-200/50"
+                                                            : "bg-white dark:bg-[#0F172A] border-neutral-100 dark:border-neutral-800 text-neutral-400")}>
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Conditional config based on afterAction */}
+                                    <div>
+                                        {(!currentAppData?.afterAction || currentAppData.afterAction === 'nothing') && (
+                                            <div className="flex items-center justify-center h-full text-[10px] text-neutral-300 italic">
+                                                No further action will be taken after submit.
+                                            </div>
+                                        )}
+
+                                        {currentAppData?.afterAction === 'app' && (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Target Application</label>
+                                                <select
+                                                    value={currentAppData?.afterActionAppId || ''}
+                                                    onChange={(e) => handleUpdateAppSettings({ afterActionAppId: e.target.value })}
+                                                    className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none dark:text-white">
+                                                    <option value="">Select application…</option>
+                                                    {allApps.filter(a => a.id !== currentAppId).map(a => (
+                                                        <option key={a.id} value={a.id}>{a.name}</option>
+                                                    ))}
+                                                </select>
+                                                <p className="text-[9px] text-neutral-400 italic">User will be taken to this application after a successful submit.</p>
+                                            </div>
+                                        )}
+
+                                        {currentAppData?.afterAction === 'url' && (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Destination URL</label>
+                                                <input
+                                                    type="url"
+                                                    placeholder="https://example.com/thank-you"
+                                                    value={currentAppData?.afterActionUrl || ''}
+                                                    onChange={(e) => handleUpdateAppSettings({ afterActionUrl: e.target.value })}
+                                                    className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-mono outline-none dark:text-white" />
+                                                <p className="text-[9px] text-neutral-400 italic">User will be redirected to this URL after a successful submit.</p>
+                                            </div>
+                                        )}
+
+                                        {currentAppData?.afterAction === 'workflow' && (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Workflow to Trigger</label>
+                                                <AfterActionWorkflowPicker
+                                                    value={currentAppData?.afterActionWorkflowId || ''}
+                                                    onChange={(id) => handleUpdateAppSettings({ afterActionWorkflowId: id })}
+                                                    selectedProjectId={selectedProjectId}
+                                                />
+                                                <p className="text-[9px] text-neutral-400 italic">This workflow will be triggered immediately after a successful submit, with the submitted record as payload.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-6 mt-4 border-t border-neutral-100 dark:border-neutral-800 flex justify-end">
                                 <button onClick={() => setShowAppSettings(false)}
                                     className="px-10 py-3 bg-neutral-900 dark:bg-primary-600 text-white font-bold rounded-2xl hover:bg-neutral-800 dark:hover:bg-primary-500 transition-all active:scale-95 shadow-lg">
                                     Save & Close
@@ -815,7 +1014,8 @@ function ChildComponentsRenderer({
     onFormUpdate?: (field: string, val: any) => void;
     appContext?: any;
 }) {
-    const { components, selectedId, selectComponent, moveComponent, updateComponentSize } = useBuilderStore();
+    const { components, selectedId, selectedIds, selectComponent, toggleSelectComponent, clearSelection, moveComponent, updateComponentSize, deleteSelected, alignSelected } = useBuilderStore();
+    const [contextMenu, setContextMenu] = useState<{x:number; y:number} | null>(null);
     const children = components.filter(c => c.parentId === parentId && c.slotKey === slotKey);
 
     if (children.length === 0) {
@@ -891,56 +1091,125 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
     );
 }
 
-function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?: any, customWidth?: number }) {
-    const { components, selectedId, selectComponent, moveComponent, updateComponentSize } = useBuilderStore();
-    const { isOver, setNodeRef } = useDroppable({
-        id: 'canvas-dropzone'
-    });
+function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: string, appData?: any, customWidth?: number, onCanvasRef?: (el: HTMLDivElement | null) => void }) {
+    const { components, selectedId, selectedIds, selectComponent, toggleSelectComponent, clearSelection, moveComponent, updateComponentSize, deleteSelected, alignSelected } = useBuilderStore();
+    const [contextMenu, setContextMenu] = useState<{x:number; y:number} | null>(null);
+    const canvasInnerRef = React.useRef<HTMLDivElement>(null);
+    const { isOver, setNodeRef } = useDroppable({ id: 'canvas-dropzone' });
+    const setRefs = (el: HTMLDivElement | null) => {
+        setNodeRef(el);
+        (canvasInnerRef as any).current = el;
+        onCanvasRef?.(el);
+    };
 
-    const [draggingId, setDraggingId] = useState<string | null>(null);
-    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-    const [initialPos, setInitialPos] = useState({ x: 0, y: 0 });
+    // ── All transient pointer state lives in a single ref so handlers are
+    //    always fresh without stale-closure problems. ─────────────────────────
+    const ptr = React.useRef<{
+        mode: 'idle' | 'drag' | 'resize' | 'marquee';
+        id: string | null;
+        startX: number; startY: number;          // client coords at pointer-down
+        canvasStartX: number; canvasStartY: number; // canvas-relative at pointer-down
+        initX: number; initY: number;            // component position at start
+        initW: number; initH: number;            // component size at start
+    }>({ mode: 'idle', id: null, startX: 0, startY: 0, canvasStartX: 0, canvasStartY: 0,
+         initX: 0, initY: 0, initW: 0, initH: 0 });
 
-    const [resizingId, setResizingId] = useState<string | null>(null);
-    const [initialSize, setInitialSize] = useState({ w: 0, h: 0 });
+    // Marquee display state (React state for re-render) + ref for side-effect-safe access in onUp
+    const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+    const marqueeRef = React.useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
-    const handleMouseMove = useCallback((e: MouseEvent) => {
-      if (draggingId) {
-        const dx = e.clientX - dragStart.x;
-        const dy = e.clientY - dragStart.y;
-        moveComponent(draggingId, Math.max(0, initialPos.x + dx), Math.max(0, initialPos.y + dy));
-      }
-      if (resizingId) {
-        const dx = e.clientX - dragStart.x;
-        const dy = e.clientY - dragStart.y;
-        updateComponentSize(resizingId, Math.max(50, initialSize.w + dx), Math.max(30, initialSize.h + dy));
-      }
-    }, [draggingId, resizingId, dragStart, initialPos, initialSize, moveComponent, updateComponentSize]);
+    // Dynamic canvas height — grows as components are placed further down the canvas
+    const canvasMinHeight = useMemo(() => {
+        if (components.filter(c => !c.parentId).length === 0) return 800;
+        const maxY = Math.max(...components.filter(c => !c.parentId).map(c =>
+            (c.position?.y || 0) + (c.size?.height || 100)
+        ));
+        return Math.max(800, maxY + 200); // 200px buffer below lowest component
+    }, [components]);
 
-    const handleMouseUp = useCallback(() => {
-      setDraggingId(null);
-      setResizingId(null);
-    }, []);
-
+    // Close context menu: defer by one tick so the right-click onContextMenu
+    // handler fires BEFORE we check for outside clicks.
     useEffect(() => {
-      if (draggingId || resizingId) {
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-      } else {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-      }
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
-      };
-    }, [draggingId, resizingId, handleMouseMove, handleMouseUp]);
+        if (!contextMenu) return;
+        let tid: ReturnType<typeof setTimeout>;
+        const handler = (e: MouseEvent) => {
+            if ((e.target as HTMLElement).closest('[data-nexus-ctx-menu]')) return;
+            setContextMenu(null);
+        };
+        tid = setTimeout(() => window.addEventListener('mousedown', handler), 0);
+        return () => { clearTimeout(tid); window.removeEventListener('mousedown', handler); };
+    }, [contextMenu]);
+
+    // Single always-active global pointer listener (handles drag, resize, marquee)
+    useEffect(() => {
+        const onMove = (e: MouseEvent) => {
+            const p = ptr.current;
+            if (p.mode === 'drag' && p.id) {
+                const dx = e.clientX - p.startX;
+                const dy = e.clientY - p.startY;
+                moveComponent(p.id, Math.max(0, p.initX + dx), Math.max(0, p.initY + dy));
+            } else if (p.mode === 'resize' && p.id) {
+                const dx = e.clientX - p.startX;
+                const dy = e.clientY - p.startY;
+                updateComponentSize(p.id, Math.max(50, p.initW + dx), Math.max(30, p.initH + dy));
+            } else if (p.mode === 'marquee') {
+                const dx = e.clientX - p.startX;
+                const dy = e.clientY - p.startY;
+                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+                    const mq = {
+                        x: Math.min(p.canvasStartX, p.canvasStartX + dx),
+                        y: Math.min(p.canvasStartY, p.canvasStartY + dy),
+                        w: Math.abs(dx), h: Math.abs(dy),
+                    };
+                    marqueeRef.current = mq;
+                    setMarquee(mq);
+                }
+            }
+        };
+        const onUp = (_e: MouseEvent) => {
+            const p = ptr.current;
+            if (p.mode === 'marquee') {
+                // Read current marquee from React state via a ref snapshot
+                // We must NOT call side-effects inside setMarquee() updater.
+                // Instead: read marqueeRef, compute hits, batch-select them,
+                // THEN clear the display state.
+                const currentMarquee = marqueeRef.current;
+                if (currentMarquee) {
+                    const PADDING = 32;
+                    const mx = currentMarquee.x - PADDING;
+                    const my = currentMarquee.y - PADDING;
+                    const mr = mx + currentMarquee.w;
+                    const mb = my + currentMarquee.h;
+                    const store = useBuilderStore.getState();
+                    const hit = store.components.filter(c => {
+                        if (c.parentId) return false;
+                        const cx2 = (c.position?.x || 0) + (c.size?.width  || 200) / 2;
+                        const cy2 = (c.position?.y || 0) + (c.size?.height || 80 ) / 2;
+                        return cx2 >= mx && cx2 <= mr && cy2 >= my && cy2 <= mb;
+                    });
+                    // Batch-select: call toggleSelectComponent once per hit component.
+                    // Each call reads fresh state via get() so they stack correctly.
+                    hit.forEach(c => store.toggleSelectComponent(c.id));
+                }
+                setMarquee(null);
+                marqueeRef.current = null;
+            }
+            ptr.current.mode = 'idle';
+            ptr.current.id   = null;
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup',   onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup',   onUp);
+        };
+    }, [moveComponent, updateComponentSize]); // stable deps — handlers read ptr.current
 
     return (
         <div 
             ref={setNodeRef}
             className={cn(
-                "shadow-2xl transition-all duration-300 min-h-[800px] border relative overflow-hidden",
+                "shadow-2xl transition-all duration-300 border relative",
                 viewMode === 'desktop' && "w-full",
                 viewMode === 'tablet' && "w-[768px]",
                 viewMode === 'mobile' && "w-[375px]",
@@ -948,12 +1217,34 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
                 isOver ? "border-primary-600" : ""
             )}
             style={{
-                background: isOver ? undefined : (appData?.bgColor || 'var(--bg-surface)'),
+                background: isOver ? undefined : (appData?.bgColor || '#FFFFFF'),
                 borderColor: isOver ? undefined : 'var(--border-color)',
+                minHeight: canvasMinHeight,
                 ...(viewMode === 'custom' ? { width: customWidth } : {}),
             }}
             onClick={(e) => {
-                if (e.target === e.currentTarget) selectComponent(null);
+                if (e.target === e.currentTarget) clearSelection();
+            }}
+            onContextMenu={(e) => {
+                // Right-click on empty canvas clears selection
+                if (e.target === e.currentTarget) { e.preventDefault(); clearSelection(); }
+            }}
+            onMouseDown={(e) => {
+                const el = e.target as HTMLElement;
+                const isCanvas = el === e.currentTarget
+                    || el.classList.contains('nexus-canvas-inner')
+                    || el.classList.contains('nexus-canvas-bg')
+                    || el.closest('.nexus-canvas-inner') === el.parentElement;
+                if (!isCanvas || e.button !== 0) return;
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const cx = e.clientX - rect.left;
+                const cy = e.clientY - rect.top;
+                if (!e.shiftKey && !e.ctrlKey && !e.metaKey) clearSelection();
+                ptr.current = { ...ptr.current, mode: 'marquee', id: null,
+                    startX: e.clientX, startY: e.clientY,
+                    canvasStartX: cx, canvasStartY: cy,
+                    initX: 0, initY: 0, initW: 0, initH: 0 };
+                setMarquee(null);
             }}
         >
             {/* App Header band */}
@@ -972,17 +1263,52 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
                 <span className="text-neutral-300 dark:text-slate-700">•</span>
                 <span>{components.length} Components</span>
                 {selectedId && <span className="text-blue-400">• Drag the <GripHorizontal className="w-3 h-3 inline" /> handle to reposition</span>}
+                <span className="text-neutral-300 dark:text-slate-700">• Press <kbd className="bg-neutral-200 dark:bg-slate-700 px-1 rounded text-[9px] font-mono">?</kbd> for shortcuts</span>
             </div>
 
-            <div className="p-8">
+            <div className="p-8 nexus-canvas-inner">
             {components.filter(c => !c.parentId).length === 0 && components.length === 0 ? (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                     <div className="text-center opacity-40">
-                         <div className="w-16 h-16 bg-neutral-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-neutral-200 dark:border-slate-700">
-                             <Plus className="w-8 h-8 text-neutral-400 dark:text-slate-500" />
+                <div className="absolute inset-0 flex items-center justify-center nexus-canvas-bg">
+                     <div className="text-center max-w-sm">
+                         <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 border-2 border-dashed border-neutral-200 shadow-sm">
+                             <Plus className="w-8 h-8 text-neutral-300" />
                          </div>
-                         <p className="text-neutral-500 dark:text-slate-400 font-bold uppercase tracking-widest text-xs">Drop zone</p>
-                         <p className="text-[10px] text-neutral-400 mt-2">Drag components from the palette to start building</p>
+                         <p className="text-neutral-600 font-bold text-sm mb-1">Your canvas is empty</p>
+                         <div className="flex items-center justify-center gap-2 text-[11px] text-neutral-400 font-medium mb-6">
+                             <span className="animate-bounce">←</span>
+                             <span>Drag any component from the left panel to begin</span>
+                         </div>
+                         <p className="text-[9px] text-neutral-300 font-black uppercase tracking-widest mb-3">Quick start</p>
+                         <div className="flex gap-2 justify-center flex-wrap pointer-events-auto">
+                             {[
+                                 { type: 'table', label: '📋 Data Table', desc: 'Display live data' },
+                                 { type: 'input', label: '✏️ Input Form', desc: 'Collect data' },
+                                 { type: 'button', label: '🔘 Button', desc: 'Trigger actions' },
+                             ].map(({ type, label, desc }) => (
+                                 <button key={type}
+                                     onClick={() => {
+                                         const defProps: Record<string,any> = {
+                                             table: { dataSource: '' },
+                                             input: { label: 'Input Field', placeholder: 'Enter value…' },
+                                             button: { label: 'Click Me', style: 'primary', actionType: 'submit' },
+                                         };
+                                         const newComp = {
+                                             id: `${type}_${Math.random().toString(36).substr(2,9)}`,
+                                             type,
+                                             label,
+                                             properties: defProps[type] || {},
+                                             position: { x: 80, y: 60 },
+                                             size: { width: type === 'table' ? 500 : 280, height: type === 'table' ? 300 : 80 }
+                                         };
+                                         useBuilderStore.getState().addComponent(newComp as any);
+                                     }}
+                                     className="flex flex-col items-center gap-1 px-4 py-3 bg-white border border-neutral-200 rounded-xl hover:border-primary-400 hover:bg-primary-50/30 transition-all shadow-sm text-left group"
+                                 >
+                                     <span className="text-xs font-bold text-neutral-700 group-hover:text-primary-700">{label}</span>
+                                     <span className="text-[9px] text-neutral-400">{desc}</span>
+                                 </button>
+                             ))}
+                         </div>
                      </div>
                 </div>
             ) : (
@@ -999,12 +1325,21 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
                               zIndex: selectedId === c.id ? 50 : 10
                             }}
                             onMouseDown={(e) => {
+                                if (e.button === 2) return; // right-click → let onContextMenu handle it
                                 e.stopPropagation();
-                                selectComponent(c.id);
+                                if (e.shiftKey || e.ctrlKey || e.metaKey) toggleSelectComponent(c.id);
+                                else if (!selectedIds.has(c.id)) selectComponent(c.id);
+                                // if already selected and no modifier, keep multiselect intact for potential drag
+                            }}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (!selectedIds.has(c.id)) selectComponent(c.id);
+                                setContextMenu({ x: e.clientX, y: e.clientY });
                             }}
                             className={cn(
                                 "group cursor-default transition-shadow rounded-md",
-                                selectedId === c.id ? "ring-2 ring-primary-600 ring-offset-4 shadow-xl" : "hover:ring-2 hover:ring-neutral-200 hover:ring-offset-4"
+                                selectedIds.has(c.id) ? "ring-2 ring-primary-600 ring-offset-4 shadow-xl" : "hover:ring-2 hover:ring-neutral-200 hover:ring-offset-4"
                             )}
                         >
                             {/* Dedicated drag handle — always visible when hovered/selected */}
@@ -1012,10 +1347,11 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
                                 title="Drag to reposition"
                                 onMouseDown={(e) => {
                                     e.stopPropagation();
-                                    selectComponent(c.id);
-                                    setDraggingId(c.id);
-                                    setDragStart({ x: e.clientX, y: e.clientY });
-                                    setInitialPos({ x: c.position?.x || 0, y: c.position?.y || 0 });
+                                    if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !selectedIds.has(c.id)) selectComponent(c.id);
+                                    ptr.current = { ...ptr.current, mode: 'drag', id: c.id,
+                                        startX: e.clientX, startY: e.clientY,
+                                        initX: c.position?.x || 0, initY: c.position?.y || 0,
+                                        initW: 0, initH: 0 };
                                 }}
                                 className={cn(
                                     "absolute -top-6 left-1/2 -translate-x-1/2 h-5 px-2 bg-neutral-700 dark:bg-slate-600 rounded-full flex items-center gap-1 cursor-move z-20 select-none transition-all",
@@ -1028,7 +1364,7 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
 
                             <RenderComponent component={c} />
                             
-                            {selectedId === c.id && (
+                            {selectedIds.has(c.id) && (
                                 <div className="absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-primary-600 text-white px-2 py-1 rounded shadow-lg text-[10px] font-bold pointer-events-none z-10 whitespace-nowrap">
                                     {c.label}
                                     <div className="w-2 h-2 bg-primary-600 rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
@@ -1036,13 +1372,14 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
                             )}
 
                             {/* Resize handle */}
-                            {selectedId === c.id && (
+                            {selectedId === c.id && selectedIds.size === 1 && (
                                 <div 
                                   onMouseDown={(e) => {
                                     e.stopPropagation();
-                                    setResizingId(c.id);
-                                    setDragStart({ x: e.clientX, y: e.clientY });
-                                    setInitialSize({ w: c.size?.width || 200, h: c.size?.height || 80 });
+                                    ptr.current = { ...ptr.current, mode: 'resize', id: c.id,
+                                        startX: e.clientX, startY: e.clientY,
+                                        initW: c.size?.width || 200, initH: c.size?.height || 80,
+                                        initX: 0, initY: 0 };
                                   }}
                                   className="absolute -bottom-1 -right-1 w-4 h-4 bg-white border-2 border-primary-600 rounded-full cursor-nwse-resize z-10 hover:scale-125 transition-transform shadow-sm flex items-center justify-center"
                                   title="Drag to resize"
@@ -1053,6 +1390,61 @@ function Canvas({ viewMode, appData, customWidth }: { viewMode: string, appData?
                 </div>
             )}
             </div>{/* /p-8 */}
+
+            {/* Rubber-band selection overlay */}
+            {marquee && (
+                <div
+                    className="pointer-events-none absolute border-2 border-primary-500 bg-primary-500/10"
+                    style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h, zIndex: 200 }}
+                />
+            )}
+
+            {/* Selection hint */}
+            {!marquee && selectedIds.size === 0 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-[9px] text-neutral-400 font-medium pointer-events-none select-none">
+                    Drag on empty canvas to multi-select · Ctrl+click to add/remove
+                </div>
+            )}
+
+            {/* Multi-select context menu */}
+            {contextMenu && (
+                <div
+                    data-nexus-ctx-menu
+                    className="fixed z-[300] bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-700 rounded-xl shadow-2xl py-1 min-w-[200px] animate-in fade-in zoom-in-95 duration-100"
+                    style={{ left: Math.min(contextMenu.x, window.innerWidth - 210), top: Math.min(contextMenu.y, window.innerHeight - 250) }}
+                    onMouseDown={e => e.stopPropagation()}
+                >
+                    {/* Header showing selection count */}
+                    <div className="px-3 py-2 border-b border-neutral-100 dark:border-slate-800 flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                            {selectedIds.size > 1 ? `${selectedIds.size} items selected` : '1 item selected'}
+                        </span>
+                        <span className="text-[9px] text-neutral-300">Right-click menu</span>
+                    </div>
+                    {selectedIds.size >= 2 && (
+                        <>
+                            <div className="px-3 py-1.5 text-[9px] font-black text-neutral-400 uppercase tracking-widest border-b border-neutral-100 dark:border-slate-800 mb-1">
+                                Align {selectedIds.size} items
+                            </div>
+                            {(['left','right','top','bottom'] as const).map(dir => (
+                                <button key={dir} onClick={() => { alignSelected(dir); setContextMenu(null); }}
+                                    className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-neutral-700 dark:text-slate-300 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors text-left">
+                                    <span className="w-4 h-4 flex items-center justify-center text-neutral-400">
+                                        {dir === 'left' && '⊢'}{dir === 'right' && '⊣'}{dir === 'top' && '⊤'}{dir === 'bottom' && '⊥'}
+                                    </span>
+                                    Align {dir.charAt(0).toUpperCase() + dir.slice(1)}
+                                </button>
+                            ))}
+                            <div className="border-t border-neutral-100 dark:border-slate-800 my-1"/>
+                        </>
+                    )}
+                    <button onClick={() => { deleteSelected(); setContextMenu(null); }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors text-left">
+                        <span className="w-4 h-4 flex items-center justify-center">✕</span>
+                        Delete{selectedIds.size > 1 ? ` (${selectedIds.size})` : ''}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -1094,12 +1486,20 @@ function RenderComponent({
                 if (properties.actionType === 'url' && properties.url) {
                     window.open(properties.url, '_blank');
                 } else if (properties.actionType === 'application' && properties.targetAppId) {
+                    // Apply field mappings to pass params to the target app
+                    const mappings = properties.paramMappings || [];
+                    const params: Record<string,any> = {};
+                    mappings.forEach((m: any) => {
+                        const v = m.sourceField ? String((formState||{})[m.sourceField] ?? '') : (m.staticValue || '');
+                        if (v !== '') params[m.targetField] = v;
+                    });
+                    (window as any).__nexusParams = params;
                     useBuilderStore.getState().setCurrentAppId(properties.targetAppId);
                 } else if (properties.actionType === 'cancel') {
                     useBuilderStore.getState().setCurrentAppId(null);
                 } else if (properties.actionType === 'submit') {
                     if (!appContext || !appContext.dataSourceId || !selectedProjectId) {
-                        alert('Application not fully configured for data operations');
+                        window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'Application not fully configured for data operations', type: 'error' } }));
                         return;
                     }
                     
@@ -1110,15 +1510,15 @@ function RenderComponent({
                     try {
                         if (mode === 'add') {
                             await dataService.addRecord(selectedProjectId, tableId, formState || {});
-                            alert('Record added successfully');
+                            window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'Record added successfully', type: 'success' } }));
                         } else if (mode === 'update') {
                             if (keyFields.length === 0) {
-                                alert('No key fields defined for update mode');
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'No key fields defined — set Key Fields in Application Settings', type: 'error' } }));
                                 return;
                             }
                             const missingKeys = keyFields.filter(kf => formState?.[kf] === undefined || formState?.[kf] === '');
                             if (missingKeys.length > 0) {
-                                alert(`Please fill in required key field(s): ${missingKeys.join(', ')}`);
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: `Please fill in required field(s): ${missingKeys.join(', ')}`, type: 'error' } }));
                                 return;
                             }
                             const q = query(
@@ -1127,21 +1527,21 @@ function RenderComponent({
                             );
                             const snap = await getDocs(q);
                             if (snap.empty) {
-                                alert('No matching record found to update');
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'No matching record found to update', type: 'error' } }));
                             } else {
                                 for (const docRef of snap.docs) {
                                     await dataService.updateRecord(selectedProjectId, tableId, docRef.id, formState || {});
                                 }
-                                alert(`Updated ${snap.size} record(s)`);
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: `Updated ${snap.size} record(s)`, type: 'success' } }));
                             }
                         } else if (mode === 'delete') {
                             if (keyFields.length === 0) {
-                                alert('No key fields defined for delete mode');
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'No key fields defined — set Key Fields in Application Settings', type: 'error' } }));
                                 return;
                             }
                             const missingKeys = keyFields.filter(kf => formState?.[kf] === undefined || formState?.[kf] === '');
                             if (missingKeys.length > 0) {
-                                alert(`Please fill in required key field(s): ${missingKeys.join(', ')}`);
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: `Please fill in required field(s): ${missingKeys.join(', ')}`, type: 'error' } }));
                                 return;
                             }
                              const q = query(
@@ -1150,19 +1550,19 @@ function RenderComponent({
                             );
                             const snap = await getDocs(q);
                             if (snap.empty) {
-                                alert('No matching record found to delete');
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'No matching record found to delete', type: 'error' } }));
                             } else {
                                 for (const docRef of snap.docs) {
                                     await dataService.deleteRecord(selectedProjectId, tableId, docRef.id);
                                 }
-                                alert(`Deleted ${snap.size} record(s)`);
+                                window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: `Deleted ${snap.size} record(s)`, type: 'success' } }));
                             }
                         } else {
-                            alert('Application is in view-only mode');
+                            window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'Application is in view-only mode', type: 'info' } }));
                         }
                     } catch (e) {
                         console.error(e);
-                        alert('Operation failed');
+                        window.dispatchEvent(new CustomEvent('nexus-toast', { detail: { msg: 'Operation failed', type: 'error' } }));
                     }
                 }
             };
@@ -1317,13 +1717,22 @@ function RenderComponent({
                             {properties.label || 'Input Label'}
                             {properties.required && <span className="text-error-500">*</span>}
                         </div>
+                        {properties.readOnly && (
+                            <span className="text-[9px] font-black uppercase tracking-widest text-amber-500 bg-amber-50 dark:bg-amber-950/30 px-1.5 py-0.5 rounded">Read Only</span>
+                        )}
                     </label>
                     <input 
                         type="text" 
-                        value={formState ? (formState[properties.fieldMapping || component.id] ?? '') : ''}
-                        onChange={(e) => { if (preview) onFormUpdate?.(properties.fieldMapping || component.id, e.target.value); }}
-                        placeholder={properties.placeholder || 'Enter value...'}
-                        className="w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none transition-all dark:text-white"
+                        value={formState ? (formState[properties.fieldMapping || component.id] ?? appContext?.urlParams?.[properties.fieldMapping || ''] ?? '') : ''}
+                        onChange={(e) => { if (preview && !properties.readOnly) onFormUpdate?.(properties.fieldMapping || component.id, e.target.value); }}
+                        placeholder={properties.readOnly ? '' : (properties.placeholder || 'Enter value...')}
+                        readOnly={!!properties.readOnly}
+                        className={cn(
+                            "w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border rounded-xl text-sm outline-none transition-all dark:text-white",
+                            properties.readOnly
+                                ? "border-neutral-100 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 cursor-default select-none bg-neutral-50/60 dark:bg-neutral-900/40"
+                                : "border-neutral-200 dark:border-neutral-800 focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600"
+                        )}
                         disabled={!preview}
                     />
                 </div>
@@ -1483,6 +1892,48 @@ function RenderComponent({
             );
         }
 
+        case 'image':
+            return (
+                <div className="w-full h-full flex items-center justify-center rounded-xl overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
+                    {properties.src ? (
+                        <img
+                            src={properties.src}
+                            alt={properties.alt || ''}
+                            style={{ width: '100%', height: '100%', objectFit: (properties.fit as any) || 'cover' }}
+                        />
+                    ) : (
+                        <div className="flex flex-col items-center gap-2 text-neutral-300">
+                            <ImageIcon className="w-10 h-10" />
+                            <span className="text-xs font-medium">Image component</span>
+                            <span className="text-[10px] text-neutral-400">Configure an image in the properties panel</span>
+                        </div>
+                    )}
+                </div>
+            );
+
+        case 'badge': {
+            const variant = properties.variant || 'solid';
+            const color = properties.color || '#1A56DB';
+            const textColor = variant === 'solid' ? (properties.textColor || '#ffffff') : color;
+            const bg = variant === 'solid' ? color : `${color}20`;
+            const border = variant === 'outline' ? `1.5px solid ${color}` : 'none';
+            const size = properties.size || 'md';
+            const sizeClass = size === 'sm' ? 'text-[9px] px-2 py-0.5' : size === 'lg' ? 'text-sm px-4 py-1.5' : 'text-xs px-3 py-1';
+            return (
+                <div className="w-full h-full flex items-center gap-1.5 flex-wrap">
+                    {(properties.tags || [{ label: properties.label || 'Badge', value: '' }]).map((tag: any, i: number) => (
+                        <span
+                            key={i}
+                            className={`inline-flex items-center font-bold rounded-full select-none ${sizeClass}`}
+                            style={{ background: bg, color: textColor, border }}
+                        >
+                            {tag.label || tag}
+                        </span>
+                    ))}
+                </div>
+            );
+        }
+
         default:
             return (
                 <div className="p-4 rounded-lg text-xs italic" style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
@@ -1608,7 +2059,36 @@ function DataTableComponent({ component, properties, appContext, preview }: { co
                                         <td className="px-2 py-1.5">
                                             <div className="flex gap-1">
                                                 {startBtns.map((btn: any, bi: number) => (
-                                                    <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
+                                                    <button key={bi}
+                                                        onClick={() => {
+                                                            if (!preview) return;
+                                                            if (btn.action === 'app' && btn.targetAppId) {
+                                                                // Build params from explicit mappings if configured,
+                                                                // otherwise fall back to passing all row fields
+                                                                const rowWithMeta = { ...row, _rowId: row.id || '', _sourceTable: properties.dataSource || '' };
+                                                                const paramMappings: any[] = btn.paramMappings || [];
+                                                                const params: Record<string,any> = {};
+                                                                if (paramMappings.length > 0) {
+                                                                    paramMappings.forEach((m: any) => {
+                                                                        const v = m.sourceField ? String(rowWithMeta[m.sourceField] ?? '') : (m.staticValue || '');
+                                                                        if (v !== '') params[m.targetField] = v;
+                                                                    });
+                                                                } else {
+                                                                    // No mappings configured — pass everything
+                                                                    Object.entries(rowWithMeta).forEach(([k,v]) => { if (k !== 'id') params[k] = String(v ?? ''); });
+                                                                }
+                                                                useBuilderStore.getState().setCurrentAppId(btn.targetAppId);
+                                                                (window as any).__nexusParams = params;
+                                                            } else if (btn.action === 'url' && btn.targetUrl) {
+                                                                const url = btn.targetUrl.replace(/\{\{row\.(\w+)\}\}/g, (_: any, f: string) => String(row[f] ?? ''));
+                                                                window.open(url, '_blank');
+                                                            } else if (btn.action === 'workflow' && btn.workflowId && appContext?.selectedProjectId) {
+                                                                import('../../services/workflowService').then(({ triggerWorkflows }) => {
+                                                                    triggerWorkflows({ wsId: appContext.selectedProjectId, triggerType: 'record_created', tableId: properties.dataSource || '', tableName: '', recordId: row.id || '', recordData: row }).catch(console.error);
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap hover:opacity-80 transition-opacity"
                                                         style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
                                                 ))}
                                             </div>
@@ -1623,7 +2103,36 @@ function DataTableComponent({ component, properties, appContext, preview }: { co
                                         <td className="px-2 py-1.5">
                                             <div className="flex gap-1 justify-end">
                                                 {endBtns.map((btn: any, bi: number) => (
-                                                    <button key={bi} className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap"
+                                                    <button key={bi}
+                                                        onClick={() => {
+                                                            if (!preview) return;
+                                                            if (btn.action === 'app' && btn.targetAppId) {
+                                                                // Build params from explicit mappings if configured,
+                                                                // otherwise fall back to passing all row fields
+                                                                const rowWithMeta = { ...row, _rowId: row.id || '', _sourceTable: properties.dataSource || '' };
+                                                                const paramMappings: any[] = btn.paramMappings || [];
+                                                                const params: Record<string,any> = {};
+                                                                if (paramMappings.length > 0) {
+                                                                    paramMappings.forEach((m: any) => {
+                                                                        const v = m.sourceField ? String(rowWithMeta[m.sourceField] ?? '') : (m.staticValue || '');
+                                                                        if (v !== '') params[m.targetField] = v;
+                                                                    });
+                                                                } else {
+                                                                    // No mappings configured — pass everything
+                                                                    Object.entries(rowWithMeta).forEach(([k,v]) => { if (k !== 'id') params[k] = String(v ?? ''); });
+                                                                }
+                                                                useBuilderStore.getState().setCurrentAppId(btn.targetAppId);
+                                                                (window as any).__nexusParams = params;
+                                                            } else if (btn.action === 'url' && btn.targetUrl) {
+                                                                const url = btn.targetUrl.replace(/\{\{row\.(\w+)\}\}/g, (_: any, f: string) => String(row[f] ?? ''));
+                                                                window.open(url, '_blank');
+                                                            } else if (btn.action === 'workflow' && btn.workflowId && appContext?.selectedProjectId) {
+                                                                import('../../services/workflowService').then(({ triggerWorkflows }) => {
+                                                                    triggerWorkflows({ wsId: appContext.selectedProjectId, triggerType: 'record_created', tableId: properties.dataSource || '', tableName: '', recordId: row.id || '', recordData: row }).catch(console.error);
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap hover:opacity-80 transition-opacity"
                                                         style={{ background: btn.color || 'var(--color-primary)' }}>{btn.label || 'Action'}</button>
                                                 ))}
                                             </div>
@@ -1639,7 +2148,7 @@ function DataTableComponent({ component, properties, appContext, preview }: { co
     );
 }
 
-function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: string, unifiedDatasources: any[] }) {
+function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: { dataSourceId?: string, unifiedDatasources: any[]; currentAppData?: any }) {
     const { selectedId, components, updateComponent, deleteComponent, currentAppId } = useBuilderStore();
     const { tables, restApiConnectors } = useSchemaStore();
     const { selectedProjectId } = useAuthStore();
@@ -1657,6 +2166,8 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
     }, [selectedProjectId]);
 
     const selectedComponent = components.find(c => c.id === selectedId);
+    const [btnTab, setBtnTab] = useState<'general'|'action'|'style'>('general');
+    const [tblTab, setTblTab] = useState<'data'|'columns'|'buttons'>('data');
     
     // Support for both table fields and API schema
     const availableFields = useMemo(() => {
@@ -1705,7 +2216,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
 
     return (
         <div className="flex-1 flex flex-col">
-            <div className="p-4 border-b border-neutral-200 flex items-center justify-between bg-neutral-50/50">
+            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-surface)' }}>
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-primary-100 text-primary-600 flex items-center justify-center">
                         {COMPONENT_TYPES.LAYOUT.find(t => t.type === type)?.icon || 
@@ -1826,72 +2337,108 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
 
                      {type === 'button' && (
                          <>
-                             <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Button Text</label>
-                                 <input 
-                                     type="text" 
-                                     value={properties.label || ''}
-                                     onChange={(e) => handleUpdate('label', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
-                                 />
+                             {/* Tab strip */}
+                             <div className="flex bg-neutral-100 dark:bg-slate-800 p-1 rounded-lg gap-0.5">
+                                 {(['general','action','style'] as const).map(t => (
+                                     <button key={t} onClick={() => setBtnTab(t)}
+                                         className={cn('flex-1 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-all',
+                                             btnTab === t ? 'bg-white dark:bg-slate-700 shadow-sm text-neutral-900 dark:text-white' : 'text-neutral-400 hover:text-neutral-600')}>
+                                         {t}
+                                     </button>
+                                 ))}
                              </div>
-                             <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Action</label>
-                                 <select 
-                                     value={properties.actionType || 'submit'}
-                                     onChange={(e) => handleUpdate('actionType', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold"
-                                 >
-                                     <option value="url">External URL</option>
-                                     <option value="application">Navigate to App</option>
-                                     <option value="submit">Submit Form</option>
-                                     <option value="cancel">Cancel/Close</option>
-                                 </select>
-                             </div>
-                             
-                             {properties.actionType === 'url' && (
-                                 <div className="space-y-1.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200 animate-in slide-in-from-top-2">
-                                     <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Target URL</label>
-                                     <input 
-                                         type="text" 
-                                         placeholder="https://example.com"
-                                         value={properties.url || ''}
-                                         onChange={(e) => handleUpdate('url', e.target.value)}
-                                         className="w-full px-2 py-1.5 text-xs bg-white border border-neutral-200 rounded outline-none"
-                                     />
+
+                             {btnTab === 'general' && (
+                                 <div className="space-y-3">
+                                     <div className="space-y-1.5">
+                                         <label className="text-[11px] font-bold text-neutral-700 uppercase">Button Text</label>
+                                         <input type="text" value={properties.label || ''}
+                                             onChange={(e) => handleUpdate('label', e.target.value)}
+                                             className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none" />
+                                     </div>
+                                     <div className="flex items-center justify-between">
+                                         <label className="text-[11px] font-bold text-neutral-700 uppercase leading-none">Visible</label>
+                                         <button onClick={() => handleUpdate('visible', properties.visible === false ? true : false)}
+                                             className={cn('relative inline-flex h-5 w-9 rounded-full border-2 border-transparent transition-colors', properties.visible !== false ? 'bg-primary-600' : 'bg-neutral-200')}>
+                                             <span className={cn('inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', properties.visible !== false ? 'translate-x-4' : 'translate-x-0')} />
+                                         </button>
+                                     </div>
                                  </div>
                              )}
 
-                             {properties.actionType === 'application' && (
-                                 <div className="space-y-1.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200 animate-in slide-in-from-top-2">
-                                     <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Select Application</label>
-                                     <select 
+                             {btnTab === 'action' && (
+                                 <div className="space-y-3">
+                                     <div className="space-y-1.5">
+                                         <label className="text-[11px] font-bold text-neutral-700 uppercase">Action</label>
+                                         <select value={properties.actionType || 'submit'}
+                                             onChange={(e) => handleUpdate('actionType', e.target.value)}
+                                             className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold">
+                                             <option value="url">External URL</option>
+                                             <option value="application">Navigate to App</option>
+                                             <option value="submit">Submit Form</option>
+                                             <option value="cancel">Cancel/Close</option>
+                                         </select>
+                                     </div>
+                             
+                                     {properties.actionType === 'url' && (
+                                         <div className="space-y-1.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200 animate-in slide-in-from-top-2">
+                                             <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Target URL</label>
+                                             <input type="text" placeholder="https://example.com"
+                                                 value={properties.url || ''}
+                                                 onChange={(e) => handleUpdate('url', e.target.value)}
+                                                 className="w-full px-2 py-1.5 text-xs bg-white border border-neutral-200 rounded outline-none" />
+                                         </div>
+                                     )}
+
+                                     {properties.actionType === 'application' && (
+                                         <div className="space-y-2 p-2 bg-neutral-50 dark:bg-slate-800/50 rounded-xl border border-neutral-200 dark:border-slate-700 animate-in slide-in-from-top-2">
+                                             <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest block">Target Application</label>
+                                     <select
                                          value={properties.targetAppId || ''}
                                          onChange={(e) => handleUpdate('targetAppId', e.target.value)}
-                                         className="w-full px-2 py-1.5 text-xs bg-white border border-neutral-200 rounded outline-none"
+                                         className="w-full px-2 py-1.5 text-xs bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-lg outline-none dark:text-white font-bold"
                                      >
-                                         <option value="">Choose application...</option>
+                                         <option value="">Choose application…</option>
                                          {allApps.filter(app => app.id !== currentAppId).map(app => (
                                              <option key={app.id} value={app.id}>{app.name}</option>
                                          ))}
                                      </select>
+                                     {properties.targetAppId && (
+                                         <>
+                                             <div className="border-t border-neutral-200 dark:border-slate-700 pt-2 mt-1">
+                                                 <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-2">Field Mapping</p>
+                                                 <AppFieldMapper
+                                                     targetAppId={properties.targetAppId}
+                                                     workspaceId={selectedProjectId || ''}
+                                                     sourceComponents={components}
+                                                     sourceAppData={currentAppData}
+                                                     mappings={properties.paramMappings || []}
+                                                     onChange={(m) => handleUpdate('paramMappings', m)}
+                                                 />
+                                             </div>
+                                         </>
+                                         )}
+                                         </div>
+                                     )}
                                  </div>
                              )}
 
-                             <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Style</label>
-                                 <select 
-                                     value={properties.style || 'primary'}
-                                     onChange={(e) => handleUpdate('style', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
-                                 >
-                                     <option value="primary">Primary</option>
-                                     <option value="secondary">Secondary</option>
-                                     <option value="danger">Danger</option>
-                                     <option value="custom">Custom Colours</option>
-                                 </select>
-                             </div>
-                             {properties.style === 'custom' && (
+                             {btnTab === 'style' && (
+                             <div className="space-y-3">
+                                 <div className="space-y-1.5">
+                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Style</label>
+                                     <select 
+                                         value={properties.style || 'primary'}
+                                         onChange={(e) => handleUpdate('style', e.target.value)}
+                                         className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                                     >
+                                         <option value="primary">Primary</option>
+                                         <option value="secondary">Secondary</option>
+                                         <option value="danger">Danger</option>
+                                         <option value="custom">Custom Colours</option>
+                                     </select>
+                                 </div>
+                                 {properties.style === 'custom' && (
                                  <div className="space-y-3 p-3 bg-neutral-50 rounded-xl border border-neutral-200 animate-in slide-in-from-top-2">
                                      <p className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">Custom Colour States</p>
                                      {[
@@ -1920,6 +2467,8 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                                          </div>
                                      ))}
                                  </div>
+                                 )}
+                             </div>
                              )}
                          </>
                      )}
@@ -1950,6 +2499,24 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                                      )}></div>
                                  </button>
                              </div>
+                             <div className="flex items-center justify-between">
+                                 <div>
+                                     <label className="text-[11px] font-bold text-neutral-700 uppercase leading-none">Read Only</label>
+                                     <p className="text-[9px] text-neutral-400 mt-0.5">Display field value — user cannot edit</p>
+                                 </div>
+                                 <button 
+                                     onClick={() => handleUpdate('readOnly', !properties.readOnly)}
+                                     className={cn(
+                                         "w-10 h-5 rounded-full transition-all relative p-1 shrink-0",
+                                         properties.readOnly ? "bg-amber-500" : "bg-neutral-200"
+                                     )}
+                                 >
+                                     <div className={cn(
+                                         "w-3 h-3 bg-white rounded-full transition-all",
+                                         properties.readOnly ? "ml-5" : "ml-0"
+                                     )}></div>
+                                 </button>
+                             </div>
                          </>
                      )}
 
@@ -1961,132 +2528,192 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                          const tableFilters: any[] = properties.tableFilters || [];
 
                          return (
-                         <div className="space-y-4">
-                             <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Data Source</label>
-                                 <select 
-                                     value={properties.dataSource || ''}
-                                     onChange={(e) => handleUpdate('dataSource', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 outline-none dark:text-white"
-                                 >
-                                     <option value="">Select a datasource...</option>
-                                     {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
-                                     {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
-                                 </select>
-                             </div>
-
-                             {/* Field Visibility */}
-                             {tableFields.length > 0 && (
-                                 <div className="space-y-2">
-                                     <div className="flex items-center justify-between">
-                                         <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Visible Fields</label>
-                                         <div className="flex gap-2">
-                                             <button onClick={() => handleUpdate('visibleFields', tableFields.map((f: any) => f.id))} className="text-[9px] font-bold uppercase tracking-wider hover:underline" style={{ color: 'var(--color-primary)' }}>All</button>
-                                             <span className="text-[9px] text-neutral-400">/</span>
-                                             <button onClick={() => handleUpdate('visibleFields', [])} className="text-[9px] font-bold uppercase tracking-wider hover:underline text-neutral-400">None</button>
-                                         </div>
-                                     </div>
-                                     <div className="space-y-1 max-h-36 overflow-y-auto rounded-lg border border-neutral-200 dark:border-slate-700">
-                                         {tableFields.map((f: any) => {
-                                             const isVisible = visibleFieldIds.includes(f.id);
-                                             return (
-                                                 <label key={f.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-neutral-50 dark:hover:bg-slate-800">
-                                                     <input
-                                                         type="checkbox"
-                                                         checked={isVisible}
-                                                         onChange={() => {
-                                                             const next = isVisible
-                                                                 ? visibleFieldIds.filter((id: string) => id !== f.id)
-                                                                 : [...visibleFieldIds, f.id];
-                                                             handleUpdate('visibleFields', next);
-                                                         }}
-                                                         className="w-3.5 h-3.5 rounded"
-                                                         style={{ accentColor: 'var(--color-primary)' }}
-                                                     />
-                                                     <span className="text-xs font-medium dark:text-slate-300 truncate">{f.name}</span>
-                                                 </label>
-                                             );
-                                         })}
-                                     </div>
-                                 </div>
-                             )}
-
-                             {/* Column Filters */}
-                             {tableFields.length > 0 && (
-                                 <div className="space-y-2">
-                                     <div className="flex items-center justify-between">
-                                         <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Filters</label>
-                                         <button
-                                             onClick={() => handleUpdate('tableFilters', [...tableFilters, { field: '', op: 'contains', value: '' }])}
-                                             className="text-[10px] font-bold hover:underline"
-                                             style={{ color: 'var(--color-primary)' }}
-                                         >+ Add Filter</button>
-                                     </div>
-                                     {tableFilters.map((flt: any, fi: number) => (
-                                         <div key={fi} className="p-2 border border-neutral-200 dark:border-slate-700 rounded-lg space-y-1.5 bg-neutral-50 dark:bg-slate-800 relative">
-                                             <button
-                                                 onClick={() => handleUpdate('tableFilters', tableFilters.filter((_: any, i: number) => i !== fi))}
-                                                 className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center text-[9px] leading-none"
-                                             >✕</button>
-                                             <select value={flt.field} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], field: e.target.value }; handleUpdate('tableFilters', nf); }}
-                                                 className="w-full px-2 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white">
-                                                 <option value="">Field…</option>
-                                                 {tableFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
-                                             </select>
-                                             <div className="flex gap-1">
-                                                 <select value={flt.op} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], op: e.target.value }; handleUpdate('tableFilters', nf); }}
-                                                     className="flex-1 px-1 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white">
-                                                     <option value="==">equals</option>
-                                                     <option value="contains">contains</option>
-                                                     <option value=">">greater than</option>
-                                                     <option value="<">less than</option>
-                                                 </select>
-                                                 <input value={flt.value} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], value: e.target.value }; handleUpdate('tableFilters', nf); }}
-                                                     placeholder="value" className="flex-1 px-2 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white" />
-                                             </div>
-                                         </div>
-                                     ))}
-                                 </div>
-                             )}
-
-                             {/* Enable Search */}
-                             <label className="flex items-center gap-2 cursor-pointer">
-                                 <input type="checkbox" checked={!!properties.enableSearch} onChange={(e) => handleUpdate('enableSearch', e.target.checked)}
-                                     className="w-3.5 h-3.5 rounded" style={{ accentColor: 'var(--color-primary)' }} />
-                                 <span className="text-xs font-medium dark:text-slate-300">Enable Search Bar</span>
-                             </label>
-
-                             {/* Row Buttons */}
-                             <div className="space-y-2">
-                                 <div className="flex items-center justify-between">
-                                     <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Row Buttons</label>
-                                     <button
-                                         onClick={() => handleUpdate('rowButtons', [...(properties.rowButtons || []), { label: 'Action', position: 'end', color: '#1A56DB' }])}
-                                         className="text-[10px] font-bold hover:underline" style={{ color: 'var(--color-primary)' }}
-                                     >+ Add Button</button>
-                                 </div>
-                                 {(properties.rowButtons || []).map((btn: any, bi: number) => (
-                                     <div key={bi} className="p-2 border border-neutral-200 dark:border-slate-700 rounded-lg space-y-2 bg-neutral-50 dark:bg-slate-800">
-                                         <div className="flex gap-1">
-                                             <input placeholder="Label" value={btn.label || ''}
-                                                 onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], label: e.target.value }; handleUpdate('rowButtons', nb); }}
-                                                 className="flex-1 px-2 py-1 text-xs border border-neutral-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 outline-none dark:text-white" />
-                                             <select value={btn.position || 'end'}
-                                                 onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], position: e.target.value }; handleUpdate('rowButtons', nb); }}
-                                                 className="px-1 py-1 text-xs border border-neutral-200 dark:border-slate-600 rounded bg-white dark:bg-slate-700 outline-none dark:text-white">
-                                                 <option value="start">Start</option>
-                                                 <option value="end">End</option>
-                                             </select>
-                                             <input type="color" value={btn.color || '#1A56DB'}
-                                                 onChange={(e) => { const nb = [...(properties.rowButtons || [])]; nb[bi] = { ...nb[bi], color: e.target.value }; handleUpdate('rowButtons', nb); }}
-                                                 className="w-7 h-7 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent" />
-                                             <button onClick={() => handleUpdate('rowButtons', (properties.rowButtons || []).filter((_: any, i: number) => i !== bi))} className="text-rose-400 hover:text-rose-600">
-                                                 <Minus className="w-3 h-3" />
-                                             </button>
-                                         </div>
-                                     </div>
+                         <div className="space-y-3">
+                             {/* Tab strip */}
+                             <div className="flex bg-neutral-100 dark:bg-slate-800 p-1 rounded-lg gap-0.5">
+                                 {(['data', 'columns', 'buttons'] as const).map(t => (
+                                     <button key={t} onClick={() => setTblTab(t)}
+                                         className={cn('flex-1 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-all',
+                                             tblTab === t ? 'bg-white dark:bg-slate-700 shadow-sm text-neutral-900 dark:text-white' : 'text-neutral-400 hover:text-neutral-600')}>
+                                         {t}
+                                     </button>
                                  ))}
                              </div>
+
+                             {/* Data tab */}
+                             {tblTab === 'data' && (
+                                 <div className="space-y-3">
+                                     <div className="space-y-1.5">
+                                         <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Data Source</label>
+                                         <select value={properties.dataSource || ''}
+                                             onChange={(e) => handleUpdate('dataSource', e.target.value)}
+                                             className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 outline-none dark:text-white">
+                                             <option value="">Select a datasource...</option>
+                                             {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                                             {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
+                                         </select>
+                                     </div>
+                                     <label className="flex items-center justify-between cursor-pointer py-1">
+                                         <span className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Enable Search Bar</span>
+                                         <button onClick={() => handleUpdate('enableSearch', !properties.enableSearch)}
+                                             className={cn('w-10 h-5 rounded-full transition-all relative p-1', properties.enableSearch ? 'bg-primary-600' : 'bg-neutral-200 dark:bg-slate-700')}>
+                                             <div className={cn('w-3 h-3 bg-white rounded-full transition-all', properties.enableSearch ? 'ml-5' : 'ml-0')} />
+                                         </button>
+                                     </label>
+                                     {tableFields.length > 0 && (
+                                         <div className="space-y-2">
+                                             <div className="flex items-center justify-between">
+                                                 <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Filters</label>
+                                                 <button onClick={() => handleUpdate('tableFilters', [...tableFilters, { field: '', op: 'contains', value: '' }])}
+                                                     className="text-[10px] font-bold hover:underline" style={{ color: 'var(--color-primary)' }}>+ Add Filter</button>
+                                             </div>
+                                             {tableFilters.map((flt: any, fi: number) => (
+                                                 <div key={fi} className="p-2 border border-neutral-200 dark:border-slate-700 rounded-lg space-y-1.5 bg-neutral-50 dark:bg-slate-800 relative">
+                                                     <button onClick={() => handleUpdate('tableFilters', tableFilters.filter((_: any, i: number) => i !== fi))}
+                                                         className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center text-[9px]">✕</button>
+                                                     <select value={flt.field} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], field: e.target.value }; handleUpdate('tableFilters', nf); }}
+                                                         className="w-full px-2 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                         <option value="">Field…</option>
+                                                         {tableFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
+                                                     </select>
+                                                     <div className="flex gap-1">
+                                                         <select value={flt.op} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], op: e.target.value }; handleUpdate('tableFilters', nf); }}
+                                                             className="flex-1 px-1 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                             <option value="==">equals</option>
+                                                             <option value="contains">contains</option>
+                                                             <option value=">">greater than</option>
+                                                             <option value="<">less than</option>
+                                                         </select>
+                                                         <input value={flt.value} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], value: e.target.value }; handleUpdate('tableFilters', nf); }}
+                                                             placeholder="value" className="flex-1 px-2 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white" />
+                                                     </div>
+                                                 </div>
+                                             ))}
+                                             {tableFilters.length === 0 && <p className="text-[10px] text-neutral-400 dark:text-slate-500 italic">No filters — all records shown.</p>}
+                                         </div>
+                                     )}
+                                 </div>
+                             )}
+
+                             {/* Columns tab */}
+                             {tblTab === 'columns' && (
+                                 <div className="space-y-2">
+                                     {tableFields.length === 0 ? (
+                                         <p className="text-[11px] text-neutral-400 dark:text-slate-500 italic py-2">Select a data source first to configure columns.</p>
+                                     ) : (
+                                         <>
+                                             <div className="flex items-center justify-between mb-1">
+                                                 <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Visible Fields</label>
+                                                 <div className="flex gap-2">
+                                                     <button onClick={() => handleUpdate('visibleFields', tableFields.map((f: any) => f.id))} className="text-[9px] font-bold uppercase tracking-wider hover:underline" style={{ color: 'var(--color-primary)' }}>All</button>
+                                                     <span className="text-[9px] text-neutral-400">/</span>
+                                                     <button onClick={() => handleUpdate('visibleFields', [])} className="text-[9px] font-bold uppercase tracking-wider hover:underline text-neutral-400">None</button>
+                                                 </div>
+                                             </div>
+                                             <div className="rounded-lg border border-neutral-200 dark:border-slate-700 overflow-hidden">
+                                                 {tableFields.map((f: any) => {
+                                                     const isVisible = visibleFieldIds.includes(f.id);
+                                                     return (
+                                                         <label key={f.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-neutral-50 dark:hover:bg-slate-800 border-b border-neutral-100 dark:border-slate-700/50 last:border-0 transition-colors">
+                                                             <input type="checkbox" checked={isVisible}
+                                                                 onChange={() => {
+                                                                     const next = isVisible ? visibleFieldIds.filter((id: string) => id !== f.id) : [...visibleFieldIds, f.id];
+                                                                     handleUpdate('visibleFields', next);
+                                                                 }}
+                                                                 className="w-3.5 h-3.5 rounded" style={{ accentColor: 'var(--color-primary)' }} />
+                                                             <div className="flex-1 min-w-0">
+                                                                 <span className="text-xs font-medium dark:text-slate-300 truncate block">{f.name}</span>
+                                                                 <span className="text-[9px] text-neutral-400 font-mono">{f.type}</span>
+                                                             </div>
+                                                             {isVisible && <div className="w-1.5 h-1.5 rounded-full bg-primary-500 shrink-0" />}
+                                                         </label>
+                                                     );
+                                                 })}
+                                             </div>
+                                         </>
+                                     )}
+                                 </div>
+                             )}
+
+                             {/* Buttons tab */}
+                             {tblTab === 'buttons' && (
+                                 <div className="space-y-3">
+                                     <div className="flex items-center justify-between">
+                                         <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Row Buttons</label>
+                                         <button onClick={() => handleUpdate('rowButtons', [...(properties.rowButtons || []), { label: 'View', position: 'end', color: '#1A56DB', action: 'nothing' }])}
+                                             className="text-[10px] font-bold hover:underline" style={{ color: 'var(--color-primary)' }}>+ Add Button</button>
+                                     </div>
+                                     {(properties.rowButtons || []).length === 0 && <p className="text-[10px] text-neutral-400 dark:text-slate-500 italic">No row buttons configured.</p>}
+                                     {(properties.rowButtons || []).map((btn: any, bi: number) => {
+                                         const updateBtn = (patch: any) => {
+                                             const nb = [...(properties.rowButtons || [])];
+                                             nb[bi] = { ...nb[bi], ...patch };
+                                             handleUpdate('rowButtons', nb);
+                                         };
+                                         return (
+                                         <div key={bi} className="p-3 border border-neutral-200 dark:border-slate-700 rounded-xl space-y-2.5 bg-neutral-50 dark:bg-slate-800">
+                                             <div className="flex gap-1 items-center">
+                                                 <input placeholder="Label" value={btn.label || ''} onChange={(e) => updateBtn({ label: e.target.value })}
+                                                     className="flex-1 px-2 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white font-bold" />
+                                                 <select value={btn.position || 'end'} onChange={(e) => updateBtn({ position: e.target.value })}
+                                                     className="px-1 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                     <option value="start">Start</option>
+                                                     <option value="end">End</option>
+                                                 </select>
+                                                 <input type="color" value={btn.color || '#1A56DB'} onChange={(e) => updateBtn({ color: e.target.value })}
+                                                     className="w-7 h-7 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent shrink-0" />
+                                                 <button onClick={() => handleUpdate('rowButtons', (properties.rowButtons || []).filter((_: any, i: number) => i !== bi))} className="text-rose-400 hover:text-rose-600 shrink-0">
+                                                     <Minus className="w-3 h-3" />
+                                                 </button>
+                                             </div>
+                                             <div className="space-y-1">
+                                                 <label className="text-[9px] font-black uppercase tracking-widest text-neutral-400">Button Action</label>
+                                                 <select value={btn.action || 'nothing'} onChange={(e) => updateBtn({ action: e.target.value })}
+                                                     className="w-full px-2 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                     <option value="nothing">Do Nothing</option>
+                                                     <option value="app">Go To Application</option>
+                                                     <option value="url">Go To URL</option>
+                                                     <option value="workflow">Trigger Workflow</option>
+                                                 </select>
+                                             </div>
+                                             {btn.action === 'app' && (
+                                                 <div className="space-y-2">
+                                                     <label className="text-[9px] font-black uppercase tracking-widest text-neutral-400">Target Application</label>
+                                                     <select value={btn.targetAppId || ''} onChange={(e) => updateBtn({ targetAppId: e.target.value, paramMappings: [] })}
+                                                         className="w-full px-2 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                         <option value="">Select application…</option>
+                                                         {allApps.filter(a => a.id !== currentAppId).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                                     </select>
+                                                     {btn.targetAppId && (
+                                                         <div className="border-t border-neutral-200 dark:border-slate-700 pt-2">
+                                                             <p className="text-[9px] font-black uppercase tracking-widest text-neutral-400 mb-1.5">Field Mapping</p>
+                                                             <AppFieldMapper targetAppId={btn.targetAppId} workspaceId={selectedProjectId || ''}
+                                                                 sourceComponents={components} sourceAppData={currentAppData}
+                                                                 mappings={btn.paramMappings || []} onChange={(m) => updateBtn({ paramMappings: m })} />
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                             )}
+                                             {btn.action === 'url' && (
+                                                 <div className="space-y-1">
+                                                     <label className="text-[9px] font-black uppercase tracking-widest text-neutral-400">URL</label>
+                                                     <input type="url" placeholder="https://example.com?id={{row.id}}" value={btn.targetUrl || ''} onChange={(e) => updateBtn({ targetUrl: e.target.value })}
+                                                         className="w-full px-2 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none font-mono dark:text-white" />
+                                                     <p className="text-[9px] text-neutral-400 italic">Use <code>{"{{row.fieldName}}"}</code> to insert row values.</p>
+                                                 </div>
+                                             )}
+                                             {btn.action === 'workflow' && (
+                                                 <div className="space-y-1">
+                                                     <label className="text-[9px] font-black uppercase tracking-widest text-neutral-400">Workflow</label>
+                                                     <AfterActionWorkflowPicker value={btn.workflowId || ''} onChange={(id) => updateBtn({ workflowId: id })} selectedProjectId={selectedProjectId} />
+                                                     <p className="text-[9px] text-neutral-400 italic">Workflow fires with the row's data as context payload.</p>
+                                                 </div>
+                                             )}
+                                         </div>
+                                         );
+                                     })}
+                                 </div>
+                             )}
                          </div>
                          );
                      })()}
@@ -2181,6 +2808,167 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources }: { dataSourceId?: 
                          </div>
                      )}
 
+                     {type === 'image' && (
+                         <div className="space-y-4">
+                             {/* Upload */}
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Upload Image</label>
+                                 <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-neutral-200 rounded-xl p-4 cursor-pointer hover:border-primary-400 hover:bg-primary-50/20 transition-all">
+                                     <Upload className="w-5 h-5 text-neutral-400" />
+                                     <span className="text-xs text-neutral-500 font-medium">
+                                         {properties.src ? 'Image set — click to change' : 'Click to upload an image'}
+                                     </span>
+                                     <input
+                                         type="file"
+                                         accept="image/*"
+                                         className="hidden"
+                                         onChange={(e) => {
+                                             const file = e.target.files?.[0];
+                                             if (!file) return;
+                                             const reader = new FileReader();
+                                             reader.onload = (ev) => handleUpdate('src', ev.target?.result as string);
+                                             reader.readAsDataURL(file);
+                                         }}
+                                     />
+                                 </label>
+                             </div>
+                             {/* URL fallback */}
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">— or — Image URL</label>
+                                 <input
+                                     type="url"
+                                     placeholder="https://example.com/image.png"
+                                     value={properties.src?.startsWith('data:') ? '' : (properties.src || '')}
+                                     onChange={(e) => handleUpdate('src', e.target.value)}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-xs outline-none font-mono"
+                                 />
+                             </div>
+                             {properties.src && (
+                                 <div className="rounded-xl overflow-hidden border border-neutral-200" style={{ height: 100 }}>
+                                     <img src={properties.src} alt="" className="w-full h-full object-cover" />
+                                 </div>
+                             )}
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Alt Text</label>
+                                 <input
+                                     placeholder="Descriptive alt text"
+                                     value={properties.alt || ''}
+                                     onChange={(e) => handleUpdate('alt', e.target.value)}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm outline-none"
+                                 />
+                             </div>
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Object Fit</label>
+                                 <select
+                                     value={properties.fit || 'cover'}
+                                     onChange={(e) => handleUpdate('fit', e.target.value)}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm outline-none"
+                                 >
+                                     <option value="cover">Cover (fill, crop)</option>
+                                     <option value="contain">Contain (letterbox)</option>
+                                     <option value="fill">Stretch</option>
+                                     <option value="none">None (original size)</option>
+                                 </select>
+                             </div>
+                             {properties.src && (
+                                 <button
+                                     onClick={() => handleUpdate('src', '')}
+                                     className="text-xs text-rose-500 hover:underline font-bold"
+                                 >
+                                     Remove image
+                                 </button>
+                             )}
+                         </div>
+                     )}
+
+                     {type === 'badge' && (
+                         <div className="space-y-4">
+                             {/* Tags */}
+                             <div className="space-y-2">
+                                 <div className="flex items-center justify-between">
+                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Tags</label>
+                                     <button
+                                         onClick={() => handleUpdate('tags', [...(properties.tags || []), { label: 'New Tag' }])}
+                                         className="text-[10px] font-bold text-primary-600 hover:underline"
+                                     >+ Add</button>
+                                 </div>
+                                 {(properties.tags || []).map((tag: any, ti: number) => (
+                                     <div key={ti} className="flex gap-1 items-center">
+                                         <input
+                                             value={tag.label || ''}
+                                             placeholder="Tag label"
+                                             onChange={(e) => {
+                                                 const t = [...(properties.tags || [])];
+                                                 t[ti] = { ...t[ti], label: e.target.value };
+                                                 handleUpdate('tags', t);
+                                             }}
+                                             className="flex-1 px-2 py-1.5 text-xs border border-neutral-200 rounded-lg bg-neutral-50 outline-none"
+                                         />
+                                         <button
+                                             onClick={() => handleUpdate('tags', (properties.tags || []).filter((_: any, i: number) => i !== ti))}
+                                             className="p-1 text-rose-400 hover:text-rose-600"
+                                         ><Minus className="w-3 h-3" /></button>
+                                     </div>
+                                 ))}
+                             </div>
+                             {/* Style */}
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Variant</label>
+                                 <div className="flex gap-2">
+                                     {['solid', 'soft', 'outline'].map(v => (
+                                         <button
+                                             key={v}
+                                             onClick={() => handleUpdate('variant', v)}
+                                             className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all capitalize ${properties.variant === v ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-neutral-200 text-neutral-500 hover:border-neutral-300'}`}
+                                         >{v}</button>
+                                     ))}
+                                 </div>
+                             </div>
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Size</label>
+                                 <div className="flex gap-2">
+                                     {['sm','md','lg'].map(s => (
+                                         <button
+                                             key={s}
+                                             onClick={() => handleUpdate('size', s)}
+                                             className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition-all uppercase ${properties.size === s ? 'border-primary-600 bg-primary-50 text-primary-700' : 'border-neutral-200 text-neutral-500 hover:border-neutral-300'}`}
+                                         >{s}</button>
+                                     ))}
+                                 </div>
+                             </div>
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Badge Colour</label>
+                                 <div className="flex gap-2 items-center">
+                                     <input type="color" value={properties.color || '#1A56DB'} onChange={(e) => handleUpdate('color', e.target.value)} className="w-9 h-9 rounded-lg border border-neutral-200 cursor-pointer p-0.5 bg-transparent" />
+                                     <input value={properties.color || '#1A56DB'} onChange={(e) => handleUpdate('color', e.target.value)} className="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-mono outline-none" />
+                                 </div>
+                             </div>
+                             {properties.variant === 'solid' && (
+                                 <div className="space-y-1.5">
+                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Text Colour</label>
+                                     <div className="flex gap-2 items-center">
+                                         <input type="color" value={properties.textColor || '#ffffff'} onChange={(e) => handleUpdate('textColor', e.target.value)} className="w-9 h-9 rounded-lg border border-neutral-200 cursor-pointer p-0.5 bg-transparent" />
+                                         <input value={properties.textColor || '#ffffff'} onChange={(e) => handleUpdate('textColor', e.target.value)} className="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-mono outline-none" />
+                                     </div>
+                                 </div>
+                             )}
+                             {/* Preview */}
+                             <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-100">
+                                 <p className="text-[9px] text-neutral-400 uppercase font-bold mb-2 tracking-widest">Preview</p>
+                                 <div className="flex gap-1.5 flex-wrap">
+                                     {(properties.tags || [{ label: properties.label || 'Badge' }]).map((tag: any, i: number) => {
+                                         const v = properties.variant || 'solid';
+                                         const c = properties.color || '#1A56DB';
+                                         const tc = v === 'solid' ? (properties.textColor || '#fff') : c;
+                                         const bg = v === 'solid' ? c : `${c}20`;
+                                         const bd = v === 'outline' ? `1.5px solid ${c}` : 'none';
+                                         return <span key={i} className="inline-flex items-center font-bold rounded-full text-xs px-3 py-1" style={{ background: bg, color: tc, border: bd }}>{tag.label || tag}</span>;
+                                     })}
+                                 </div>
+                             </div>
+                         </div>
+                     )}
+
                      {type === 'toggle' && (
                          <div className="space-y-4">
                               <div className="space-y-1.5">
@@ -2262,5 +3050,32 @@ function ViewToggle({ active, onClick, icon, title }: { active: boolean; onClick
         >
             {icon}
         </button>
+    );
+}
+
+// ── AfterActionWorkflowPicker ─────────────────────────────────────────────────
+// Loads active workflows from Firestore and presents them in a select
+function AfterActionWorkflowPicker({ value, onChange, selectedProjectId }: { value: string; onChange: (id: string) => void; selectedProjectId: string | null }) {
+    const [workflows, setWorkflows] = useState<any[]>([]);
+    useEffect(() => {
+        if (!selectedProjectId) return;
+        const q = query(collection(db, 'workspaces', selectedProjectId, 'workflows'));
+        const unsub = onSnapshot(q, snap => {
+            setWorkflows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, () => {});
+        return () => unsub();
+    }, [selectedProjectId]);
+
+    return (
+        <select
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full px-2 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white"
+        >
+            <option value="">Select workflow…</option>
+            {workflows.map(wf => (
+                <option key={wf.id} value={wf.id}>{wf.name || 'Untitled Workflow'} {wf.status === 'active' ? '✓' : '(draft)'}</option>
+            ))}
+        </select>
     );
 }

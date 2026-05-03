@@ -15,6 +15,7 @@ import { useAuthStore } from '../../store/authStore';
 import { db } from '../../lib/firebase';
 import { doc, onSnapshot, updateDoc, arrayUnion, arrayRemove, getDoc } from 'firebase/firestore';
 import { cn } from '../../lib/utils';
+import { useProjectSettingsStore } from '../../store/projectSettingsStore';
 
 
 export function ProjectSettings() {
@@ -73,6 +74,8 @@ export function ProjectSettings() {
       }
     }
   };
+
+  const { settings: projSettings, setSettings: setProjSettings } = useProjectSettingsStore();
 
   if (!projectData) return null;
 
@@ -174,6 +177,55 @@ export function ProjectSettings() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* ── Published App Access ─────────────────────────────────────── */}
+      <div className="mt-8 border border-neutral-200 dark:border-neutral-800 rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 flex items-center gap-3">
+          <Shield className="w-5 h-5 text-neutral-500" />
+          <div>
+            <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Published App Access</h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">Controls who can access published app URLs for this project</p>
+          </div>
+        </div>
+        <div className="p-6 space-y-5">
+          {/* Require Sign-In toggle */}
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <p className="text-sm font-bold text-neutral-900 dark:text-white mb-0.5">Require Sign-In</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+                When <strong>enabled</strong>, users must log into Nexus with an account that belongs to this project before accessing published app URLs.
+                When <strong>disabled</strong>, published apps are fully public — anyone with the URL can use them without logging in.
+              </p>
+            </div>
+            <button
+              onClick={() => setProjSettings({ requireSignIn: !projSettings.requireSignIn })}
+              className={cn(
+                "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none mt-1",
+                projSettings.requireSignIn ? "bg-primary-600" : "bg-neutral-200 dark:bg-neutral-700"
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform",
+                  projSettings.requireSignIn ? "translate-x-5" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
+          {/* Status badge */}
+          <div className={cn(
+            "flex items-center gap-2.5 p-3 rounded-xl border text-sm font-medium",
+            projSettings.requireSignIn
+              ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400"
+              : "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400"
+          )}>
+            <div className={cn("w-2 h-2 rounded-full shrink-0", projSettings.requireSignIn ? "bg-amber-500" : "bg-emerald-500")} />
+            {projSettings.requireSignIn
+              ? "Sign-in required — only project members can access published apps"
+              : "Public access — anyone with the URL can use published apps"}
+          </div>
+        </div>
       </div>
 
       {showInviteModal && (
