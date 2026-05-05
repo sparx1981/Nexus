@@ -22,6 +22,7 @@ export interface Dashboard {
     workspaceId: string;
     name: string;
     description?: string;
+    published?: boolean;
     cards: DashboardCard[];
     createdAt: any;
     updatedAt?: any;

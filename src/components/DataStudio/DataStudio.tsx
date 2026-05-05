@@ -22,7 +22,8 @@ import {
   Type,
   Hash,
   Trash2,
-  Upload as UploadIcon
+  Upload as UploadIcon,
+  Info
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useSchemaStore } from '../../store/schemaStore';
@@ -466,7 +467,8 @@ function DataTableView({ onCreateTable, onImportCSV, onConnectAPI }: { onCreateT
     const table = tables.find(t => t.id === selectedTableId) || tables[0];
 
     useEffect(() => {
-      if (!selectedTableId && tables.length > 0) {
+      const validIds = tables.map(t => t.id);
+      if (tables.length > 0 && (!selectedTableId || !validIds.includes(selectedTableId))) {
         setSelectedTableId(tables[0].id);
       }
     }, [tables, selectedTableId, setSelectedTableId]);
@@ -797,7 +799,21 @@ function DataTableView({ onCreateTable, onImportCSV, onConnectAPI }: { onCreateT
 
                             {newField.type === FieldType.FORMULA && (
                                 <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-200">
-                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Formula Expression</label>
+                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-1.5">
+                                        Formula Expression
+                                        <span className="relative group/formulatip cursor-default">
+                                            <Info className="w-3 h-3 text-neutral-400 hover:text-primary-600 transition-colors" />
+                                            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-72 bg-neutral-900 text-white text-[10px] font-medium leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/formulatip:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                                                <strong className="block mb-1">Formula Examples</strong>
+                                                <span className="block text-neutral-300 mb-1">Reference a field: <code className="text-amber-300">{'{fieldName}'}</code></span>
+                                                <span className="block text-neutral-300 mb-1">Multiply: <code className="text-amber-300">{'{qty} * {unitPrice}'}</code></span>
+                                                <span className="block text-neutral-300 mb-1">Add tax: <code className="text-amber-300">{'{amount} * 1.2'}</code></span>
+                                                <span className="block text-neutral-300 mb-1">Sum two fields: <code className="text-amber-300">SUM({'{price}'}, {'{tax}'})</code></span>
+                                                <span className="block text-neutral-300">Concatenate: <code className="text-amber-300">{'{firstName}'} + ' ' + {'{lastName}'}</code></span>
+                                                <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-neutral-900" />
+                                            </span>
+                                        </span>
+                                    </label>
                                     <input 
                                         type="text" 
                                         placeholder="e.g. amount * 0.15"

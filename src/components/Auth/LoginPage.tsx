@@ -103,41 +103,66 @@ export const LoginPage: React.FC = () => {
       {/* ── Left panel ──────────────────────────────────────────────────── */}
       <div
         className="hidden lg:flex flex-col justify-between w-[58%] relative overflow-hidden p-14"
-        style={{ background: 'linear-gradient(145deg, #EDF4FF 0%, #E0EDFF 40%, #D4E6FF 70%, #C8DFFF 100%)' }}
+        style={{ background: 'linear-gradient(160deg, #E8F0FF 0%, #D8E8FF 25%, #C4DBFF 55%, #B0CCFC 80%, #9BBDF8 100%)' }}
       >
-        <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
-          <path d="M 200 0 L 600 400 L 200 800" fill="none" stroke="#B8D4F8" strokeWidth="2" opacity="0.6"/>
-          <path d="M 350 0 L 750 400 L 350 800" fill="none" stroke="#B8D4F8" strokeWidth="1.5" opacity="0.4"/>
-          <rect x="120" y="80"  width="14" height="14" fill="none" stroke="#4B9FE8" strokeWidth="2"   opacity="0.7"/>
-          <rect x="580" y="160" width="10" height="10" fill="none" stroke="#F59E0B" strokeWidth="2"   opacity="0.8"/>
-          <rect x="820" y="500" width="16" height="16" fill="none" stroke="#F59E0B" strokeWidth="2"   opacity="0.6"/>
-          <rect x="200" y="600" width="9"  height="9"  fill="none" stroke="#94BAE8" strokeWidth="1.5" opacity="0.5"/>
-          <rect x="700" y="700" width="12" height="12" fill="none" stroke="#94BAE8" strokeWidth="1.5" opacity="0.5"/>
-          <rect x="450" y="60"  width="8"  height="8"  fill="#B8D4F8" opacity="0.5"/>
-          <rect x="750" y="300" width="6"  height="6"  fill="#94BAE8" opacity="0.4"/>
-          <circle cx="520" cy="640" r="8"   fill="none" stroke="#2B6CB0" strokeWidth="1.5" opacity="0.4"/>
-          <circle cx="160" cy="440" r="5"   fill="none" stroke="#2B6CB0" strokeWidth="1.5" opacity="0.35"/>
-          <circle cx="900" cy="200" r="80"  fill="none" stroke="#B8D4F8" strokeWidth="1"   opacity="0.4"/>
-          <circle cx="900" cy="200" r="130" fill="none" stroke="#B8D4F8" strokeWidth="0.8" opacity="0.25"/>
-          <line x1="340" y1="270" x2="340" y2="290" stroke="#2B6CB0" strokeWidth="2"   opacity="0.35"/>
-          <line x1="330" y1="280" x2="350" y2="280" stroke="#2B6CB0" strokeWidth="2"   opacity="0.35"/>
-          <line x1="660" y1="520" x2="660" y2="540" stroke="#94BAE8" strokeWidth="1.5" opacity="0.4"/>
-          <line x1="650" y1="530" x2="670" y2="530" stroke="#94BAE8" strokeWidth="1.5" opacity="0.4"/>
-          <path d="M 500 150 L 780 350 L 500 550 Z" fill="#C8E0FF" opacity="0.3"/>
+        {/* Rich geometric background */}
+        <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          {/* Large filled circle top-right */}
+          <circle cx="85%" cy="-5%" r="340" fill="rgba(163,196,255,0.35)" />
+          <circle cx="85%" cy="-5%" r="240" fill="rgba(140,180,255,0.25)" />
+          {/* Diagonal band */}
+          <polygon points="300,0 700,0 500,900 100,900" fill="rgba(180,210,255,0.18)" />
+          {/* Lower-left filled circle */}
+          <circle cx="5%" cy="95%" r="260" fill="rgba(120,165,245,0.22)" />
+          <circle cx="5%" cy="95%" r="160" fill="rgba(100,150,240,0.15)" />
+          {/* Mid accent shapes */}
+          <rect x="55%" y="30%" width="180" height="180" rx="32" fill="none" stroke="rgba(120,170,255,0.35)" strokeWidth="2" transform="rotate(15,55%,30%)" />
+          <rect x="58%" y="32%" width="120" height="120" rx="20" fill="rgba(150,190,255,0.12)" transform="rotate(15,58%,32%)" />
+          {/* Small scattered geometry */}
+          <rect x="18%" y="55%" width="22" height="22" rx="4" fill="none" stroke="rgba(100,155,235,0.5)" strokeWidth="1.5" />
+          <rect x="70%" y="68%" width="16" height="16" rx="3" fill="rgba(100,155,235,0.3)" />
+          <circle cx="38%" cy="78%" r="10" fill="none" stroke="rgba(100,155,235,0.4)" strokeWidth="1.5" />
+          <circle cx="72%" cy="42%" r="6" fill="rgba(100,155,235,0.35)" />
+          <line x1="0" y1="40%" x2="100%" y2="60%" stroke="rgba(140,180,255,0.2)" strokeWidth="1" />
+          <line x1="0" y1="55%" x2="100%" y2="75%" stroke="rgba(140,180,255,0.15)" strokeWidth="0.8" />
+          {/* Cross marks */}
+          <g stroke="rgba(100,155,235,0.4)" strokeWidth="1.5" strokeLinecap="round">
+            <line x1="25%" y1="calc(20%-6)" x2="25%" y2="calc(20%+6)" /><line x1="calc(25%-6)" y1="20%" x2="calc(25%+6)" y2="20%" />
+            <line x1="60%" y1="calc(82%-6)" x2="60%" y2="calc(82%+6)" /><line x1="calc(60%-6)" y1="82%" x2="calc(60%+6)" y2="82%" />
+          </g>
         </svg>
         <div className="relative z-10 flex items-center gap-3">
+          {/* G-02: N monogram brand mark */}
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-sm" style={{ background: '#1A56DB' }}>
-            <Box className="w-5 h-5 text-white" />
+            <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 19V5h2.5l9 11V5H19v14h-2.5L7.5 8v11H5z" fill="white"/>
+            </svg>
           </div>
           <span className="text-xl font-bold tracking-tight" style={{ color: '#1A2744' }}>Nexus</span>
         </div>
         <div className="relative z-10">
           <h2 className="text-4xl font-bold leading-tight mb-4" style={{ color: '#1A2744' }}>
-            The AI-first<br/>low-code platform
+            Build faster.<br/>Automate smarter.
           </h2>
-          <p className="text-base leading-relaxed max-w-sm" style={{ color: '#4A6080' }}>
-            Build applications, automate workflows, and analyse data — all without writing a line of code.
+          <p className="text-base leading-relaxed max-w-sm mb-10" style={{ color: '#4A6080' }}>
+            The AI-first low-code platform for teams who move fast.
           </p>
+          {/* G-03: Feature cards replacing rudimentary SVG */}
+          <div className="space-y-3 max-w-sm">
+            {[
+              { icon: '⚡', title: 'Build apps visually', desc: 'Drag-and-drop builder with live data connections.' },
+              { icon: '🔄', title: 'Automate workflows', desc: 'Trigger actions on data events, schedules, or webhooks.' },
+              { icon: '📊', title: 'Analyse & report', desc: 'Dashboards and reports updated in real time.' },
+            ].map(f => (
+              <div key={f.title} className="flex items-start gap-3 p-3.5 rounded-2xl" style={{ background: 'rgba(255,255,255,0.55)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.7)' }}>
+                <span className="text-xl leading-none mt-0.5">{f.icon}</span>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: '#1A2744' }}>{f.title}</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#5A7090' }}>{f.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         <div className="relative z-10">
           <p className="text-xs" style={{ color: '#6B8CAE' }}>
@@ -150,7 +175,9 @@ export const LoginPage: React.FC = () => {
       <div className="flex-1 flex flex-col justify-center px-8 sm:px-16 lg:px-20 bg-white dark:bg-slate-950">
         <div className="lg:hidden flex items-center gap-3 mb-10">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: '#1A56DB' }}>
-            <Box className="w-5 h-5 text-white" />
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 19V5h2.5l9 11V5H19v14h-2.5L7.5 8v11H5z" fill="white"/>
+            </svg>
           </div>
           <span className="text-lg font-bold tracking-tight text-neutral-900 dark:text-white">Nexus</span>
         </div>
@@ -183,7 +210,7 @@ export const LoginPage: React.FC = () => {
               <label className="block text-sm font-medium text-neutral-700 dark:text-slate-300 mb-1.5">Email or username</label>
               <input type="email" value={email} disabled={loading} onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@company.com"
-                className="w-full px-3 py-2.5 border border-neutral-300 dark:border-slate-600 rounded-md text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white dark:bg-slate-800 text-neutral-900 dark:text-white transition-all"
+                className="w-full px-3 py-2.5 border border-neutral-300 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white dark:bg-slate-800 text-neutral-900 dark:text-white transition-all"
                 required />
             </div>
 
@@ -194,12 +221,12 @@ export const LoginPage: React.FC = () => {
               </div>
               <input type="password" value={password} disabled={loading} onChange={(e) => setPassword(e.target.value)}
                 placeholder={isSignUp ? 'Min. 6 characters' : '••••••••'}
-                className="w-full px-3 py-2.5 border border-neutral-300 dark:border-slate-600 rounded-md text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white dark:bg-slate-800 text-neutral-900 dark:text-white transition-all"
+                className="w-full px-3 py-2.5 border border-neutral-300 dark:border-slate-600 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white dark:bg-slate-800 text-neutral-900 dark:text-white transition-all"
                 required minLength={6} />
             </div>
 
             <button type="submit" disabled={loading}
-              className="w-full py-2.5 text-sm font-semibold text-white rounded-md transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-2.5 text-sm font-semibold text-white rounded-xl transition-all hover:brightness-110 hover:-translate-y-px hover:shadow-md active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
               style={{ background: '#1A56DB' }}>
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : isSignUp ? <><UserPlus className="w-4 h-4" /> Create Account</> : <>Next</>}
             </button>
@@ -214,21 +241,21 @@ export const LoginPage: React.FC = () => {
           <div className="space-y-3">
             {/* Trimble ID */}
             <button onClick={handleTrimbleLogin} disabled={loading}
-              className="w-full py-2.5 px-4 border border-neutral-300 dark:border-slate-600 rounded-md text-sm font-medium text-neutral-700 dark:text-slate-200 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50">
+              className="w-full py-2.5 px-4 border border-neutral-300 dark:border-slate-600 rounded-xl text-sm font-medium text-neutral-700 dark:text-slate-200 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50">
               <Box className="w-4 h-4 shrink-0" style={{ color: '#1A56DB' }} />
               Sign in with Trimble ID
             </button>
 
             {/* Google */}
             <button onClick={() => handleSSOLogin('google')} disabled={loading}
-              className="w-full py-2.5 px-4 border border-neutral-300 dark:border-slate-600 rounded-md text-sm font-medium text-neutral-700 dark:text-slate-200 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50">
+              className="w-full py-2.5 px-4 border border-neutral-300 dark:border-slate-600 rounded-xl text-sm font-medium text-neutral-700 dark:text-slate-200 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50">
               {loading ? <Loader2 className="w-4 h-4 animate-spin text-neutral-400" /> : <GoogleIcon />}
               Continue with Google
             </button>
 
             {/* Microsoft */}
             <button onClick={() => handleSSOLogin('microsoft')} disabled={loading}
-              className="w-full py-2.5 px-4 border border-neutral-300 dark:border-slate-600 rounded-md text-sm font-medium text-neutral-700 dark:text-slate-200 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50">
+              className="w-full py-2.5 px-4 border border-neutral-300 dark:border-slate-600 rounded-xl text-sm font-medium text-neutral-700 dark:text-slate-200 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50">
               {loading ? <Loader2 className="w-4 h-4 animate-spin text-neutral-400" /> : <MicrosoftIcon />}
               Continue with Microsoft
             </button>

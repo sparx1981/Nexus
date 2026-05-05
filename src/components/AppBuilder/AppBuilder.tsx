@@ -874,84 +874,6 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                                 </div>
                             </div>
 
-                            {/* ── After Action section ─────────────────────────────── */}
-                            <div className="pt-6 mt-6 border-t border-neutral-100 dark:border-neutral-800">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 dark:text-neutral-500 pb-4">After Action — what happens after Submit is clicked</p>
-                                <div className="grid grid-cols-2 gap-6">
-                                    {/* Action picker */}
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">After Action</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {[
-                                                { id: 'nothing',  label: 'Do Nothing'       },
-                                                { id: 'app',      label: 'Go To Application' },
-                                                { id: 'url',      label: 'Go To URL'         },
-                                                { id: 'workflow', label: 'Trigger Workflow'  },
-                                            ].map(opt => (
-                                                <button key={opt.id} type="button"
-                                                    onClick={() => handleUpdateAppSettings({ afterAction: opt.id })}
-                                                    className={cn("p-2.5 rounded-xl border-2 text-[10px] font-bold transition-all text-left",
-                                                        (currentAppData?.afterAction || 'nothing') === opt.id
-                                                            ? "bg-primary-600 border-primary-600 text-white shadow-lg shadow-primary-200/50"
-                                                            : "bg-white dark:bg-[#0F172A] border-neutral-100 dark:border-neutral-800 text-neutral-400")}>
-                                                    {opt.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Conditional config based on afterAction */}
-                                    <div>
-                                        {(!currentAppData?.afterAction || currentAppData.afterAction === 'nothing') && (
-                                            <div className="flex items-center justify-center h-full text-[10px] text-neutral-300 italic">
-                                                No further action will be taken after submit.
-                                            </div>
-                                        )}
-
-                                        {currentAppData?.afterAction === 'app' && (
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Target Application</label>
-                                                <select
-                                                    value={currentAppData?.afterActionAppId || ''}
-                                                    onChange={(e) => handleUpdateAppSettings({ afterActionAppId: e.target.value })}
-                                                    className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none dark:text-white">
-                                                    <option value="">Select application…</option>
-                                                    {allApps.filter(a => a.id !== currentAppId).map(a => (
-                                                        <option key={a.id} value={a.id}>{a.name}</option>
-                                                    ))}
-                                                </select>
-                                                <p className="text-[9px] text-neutral-400 italic">User will be taken to this application after a successful submit.</p>
-                                            </div>
-                                        )}
-
-                                        {currentAppData?.afterAction === 'url' && (
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Destination URL</label>
-                                                <input
-                                                    type="url"
-                                                    placeholder="https://example.com/thank-you"
-                                                    value={currentAppData?.afterActionUrl || ''}
-                                                    onChange={(e) => handleUpdateAppSettings({ afterActionUrl: e.target.value })}
-                                                    className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-mono outline-none dark:text-white" />
-                                                <p className="text-[9px] text-neutral-400 italic">User will be redirected to this URL after a successful submit.</p>
-                                            </div>
-                                        )}
-
-                                        {currentAppData?.afterAction === 'workflow' && (
-                                            <div className="space-y-2">
-                                                <label className="text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest">Workflow to Trigger</label>
-                                                <AfterActionWorkflowPicker
-                                                    value={currentAppData?.afterActionWorkflowId || ''}
-                                                    onChange={(id) => handleUpdateAppSettings({ afterActionWorkflowId: id })}
-                                                    selectedProjectId={selectedProjectId}
-                                                />
-                                                <p className="text-[9px] text-neutral-400 italic">This workflow will be triggered immediately after a successful submit, with the submitted record as payload.</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
                             <div className="pt-6 mt-4 border-t border-neutral-100 dark:border-neutral-800 flex justify-end">
                                 <button onClick={() => setShowAppSettings(false)}
                                     className="px-10 py-3 bg-neutral-900 dark:bg-primary-600 text-white font-bold rounded-2xl hover:bg-neutral-800 dark:hover:bg-primary-500 transition-all active:scale-95 shadow-lg">
@@ -1441,12 +1363,14 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
                         className="absolute inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
                         onClick={() => setMenuOpen(false)}
                     />
-                    {/* Panel — slide left for slide-left, or dropdown for burger */}
+                    {/* Panel — slide left for slide-left (full height), or compact dropdown for burger */}
                     <div className={cn(
-                        "absolute z-50 top-0 flex flex-col shadow-2xl overflow-hidden",
-                        ps.menuType === 'slide-left' || ps.menuType === 'burger-left'
-                            ? "left-0 h-full w-56 rounded-r-2xl"
-                            : "right-0 h-full w-56 rounded-l-2xl"
+                        "absolute z-50 flex flex-col shadow-2xl overflow-hidden",
+                        ps.menuType === 'slide-left'
+                            ? "left-0 top-0 h-full w-56 rounded-r-2xl"
+                            : ps.menuType === 'burger-left'
+                                ? "left-0 top-[48px] w-56 rounded-b-2xl rounded-tr-2xl max-h-[70%] overflow-y-auto"
+                                : "right-0 top-[48px] w-56 rounded-b-2xl rounded-tl-2xl max-h-[70%] overflow-y-auto"
                     )} style={{ background: ps.menuColour || appData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)' }}>
                         <div className="px-4 py-4 border-b border-white/20 flex items-center justify-between">
                             <span className="text-white font-bold text-sm">Menu</span>
@@ -1721,10 +1645,10 @@ function RenderComponent({
                 properties.size === 'h1' && "text-4xl",
                 properties.size === 'h2' && "text-3xl",
                 properties.size === 'h3' && "text-2xl",
-            )} style={{ color: ps.textColour || '#111827' }}>{properties.text || 'Heading'}</HeadingTag>;
+            )} style={{ color: properties.textColor || ps.textColour || '#111827' }}>{properties.text || 'Heading'}</HeadingTag>;
         
         case 'text':
-            return <p className="leading-relaxed text-sm" style={{ color: ps.textColour || '#4B5563' }}>{properties.text || 'Paragraph text content...'}</p>;
+            return <p className="leading-relaxed text-sm" style={{ color: properties.textColor || ps.textColour || '#4B5563' }}>{properties.text || 'Paragraph text content...'}</p>;
 
         case 'button':
             const handleClick = async () => {
@@ -2544,7 +2468,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                             type="text" 
                             value={properties.label || ''}
                             onChange={(e) => handleUpdate('label', e.target.value)}
-                            className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                            className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
                         />
                      </div>
 
@@ -2585,11 +2509,11 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                              properties: { 
                                                  ...properties, 
                                                  fieldMapping: e.target.value,
-                                                 label: field ? field.name : properties.label 
+                                                 label: field ? (field.description?.trim() || field.name) : properties.label 
                                              }
                                          });
                                      }}
-                                     className="w-full px-3 py-2 bg-white border border-primary-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold text-primary-900"
+                                     className="w-full px-3 py-2 bg-white border border-primary-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold text-primary-900"
                                  >
                                      <option value="">Manual Input</option>
                                      {availableFields.map(f => (
@@ -2613,7 +2537,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                      type="text" 
                                      value={properties.text || ''}
                                      onChange={(e) => handleUpdate('text', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
                                  />
                              </div>
                              <div className="space-y-1.5">
@@ -2621,14 +2545,56 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  <select 
                                      value={properties.size || 'h1'}
                                      onChange={(e) => handleUpdate('size', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
                                  >
                                      <option value="h1">H1 - Large</option>
                                      <option value="h2">H2 - Medium</option>
                                      <option value="h3">H3 - Small</option>
                                  </select>
                              </div>
+                             {/* I-01: Per-instance colour override */}
+                             <div className="space-y-1.5">
+                                 <div className="flex items-center justify-between">
+                                     <label className="text-[11px] font-semibold text-neutral-600">Text Colour</label>
+                                     {properties.textColor && (
+                                         <button onClick={() => handleUpdate('textColor', '')} className="text-[10px] text-primary-500 hover:underline">↩ Project default</button>
+                                     )}
+                                 </div>
+                                 <div className="flex items-center gap-2">
+                                     <input type="color" value={properties.textColor || '#111827'}
+                                         onChange={(e) => handleUpdate('textColor', e.target.value)}
+                                         className="w-8 h-8 rounded-lg border border-neutral-200 cursor-pointer p-0.5" />
+                                     <span className="text-xs text-neutral-500 font-mono">{properties.textColor || 'Project default'}</span>
+                                 </div>
+                             </div>
                          </>
+                     )}
+
+                     {/* I-01: Paragraph text colour override */}
+                     {type === 'text' && (
+                         <div className="space-y-3">
+                             <div className="space-y-1.5">
+                                 <label className="text-[11px] font-semibold text-neutral-600">Content</label>
+                                 <textarea value={properties.text || ''}
+                                     onChange={(e) => handleUpdate('text', e.target.value)}
+                                     rows={3}
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none resize-none" />
+                             </div>
+                             <div className="space-y-1.5">
+                                 <div className="flex items-center justify-between">
+                                     <label className="text-[11px] font-semibold text-neutral-600">Text Colour</label>
+                                     {properties.textColor && (
+                                         <button onClick={() => handleUpdate('textColor', '')} className="text-[10px] text-primary-500 hover:underline">↩ Project default</button>
+                                     )}
+                                 </div>
+                                 <div className="flex items-center gap-2">
+                                     <input type="color" value={properties.textColor || '#4B5563'}
+                                         onChange={(e) => handleUpdate('textColor', e.target.value)}
+                                         className="w-8 h-8 rounded-lg border border-neutral-200 cursor-pointer p-0.5" />
+                                     <span className="text-xs text-neutral-500 font-mono">{properties.textColor || 'Project default'}</span>
+                                 </div>
+                             </div>
+                         </div>
                      )}
 
                      {type === 'button' && (
@@ -2650,7 +2616,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                          <label className="text-[11px] font-semibold text-neutral-600">Button Text</label>
                                          <input type="text" value={properties.label || ''}
                                              onChange={(e) => handleUpdate('label', e.target.value)}
-                                             className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none" />
+                                             className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none" />
                                      </div>
                                      <div className="flex items-center justify-between">
                                          <label className="text-[11px] font-semibold text-neutral-600">Visible</label>
@@ -2668,7 +2634,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                          <label className="text-[11px] font-semibold text-neutral-600">Action</label>
                                          <select value={properties.actionType || 'submit'}
                                              onChange={(e) => handleUpdate('actionType', e.target.value)}
-                                             className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold">
+                                             className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold">
                                              <option value="url">External URL</option>
                                              <option value="application">Navigate to App</option>
                                              <option value="submit">Submit Form</option>
@@ -2716,6 +2682,63 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                          )}
                                          </div>
                                      )}
+
+                                     {/* After Action — only shown when Submit Form is selected */}
+                                     {(properties.actionType === 'submit' || !properties.actionType) && (
+                                         <div className="space-y-2 pt-3 border-t border-neutral-100 dark:border-neutral-800 animate-in slide-in-from-top-2">
+                                             <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">After Submit</label>
+                                             <div className="grid grid-cols-2 gap-1.5">
+                                                 {[
+                                                     { id: 'nothing',  label: 'Do Nothing'   },
+                                                     { id: 'app',      label: 'Go To App'     },
+                                                     { id: 'url',      label: 'Go To URL'     },
+                                                     { id: 'workflow', label: 'Trigger Workflow' },
+                                                 ].map(opt => (
+                                                     <button key={opt.id} type="button"
+                                                         onClick={() => handleUpdate('afterAction', opt.id)}
+                                                         className={cn("p-2 rounded-lg border text-[9px] font-black transition-all text-left",
+                                                             (properties.afterAction || 'nothing') === opt.id
+                                                                 ? "bg-primary-600 border-primary-600 text-white"
+                                                                 : "bg-neutral-50 dark:bg-[#0F172A] border-neutral-200 dark:border-neutral-800 text-neutral-400")}>
+                                                         {opt.label}
+                                                     </button>
+                                                 ))}
+                                             </div>
+                                             {(properties.afterAction === 'app') && (
+                                                 <div className="space-y-1">
+                                                     <label className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Target Application</label>
+                                                     <select
+                                                         value={properties.afterActionAppId || ''}
+                                                         onChange={(e) => handleUpdate('afterActionAppId', e.target.value)}
+                                                         className="w-full px-2 py-1.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-lg text-xs outline-none dark:text-white">
+                                                         <option value="">Select application…</option>
+                                                         {allApps.filter((a: any) => a.id !== currentAppId).map((a: any) => (
+                                                             <option key={a.id} value={a.id}>{a.name}</option>
+                                                         ))}
+                                                     </select>
+                                                 </div>
+                                             )}
+                                             {(properties.afterAction === 'url') && (
+                                                 <div className="space-y-1">
+                                                     <label className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Destination URL</label>
+                                                     <input type="url" placeholder="https://example.com/thank-you"
+                                                         value={properties.afterActionUrl || ''}
+                                                         onChange={(e) => handleUpdate('afterActionUrl', e.target.value)}
+                                                         className="w-full px-2 py-1.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-lg text-xs font-mono outline-none dark:text-white" />
+                                                 </div>
+                                             )}
+                                             {(properties.afterAction === 'workflow') && (
+                                                 <div className="space-y-1">
+                                                     <label className="text-[9px] font-black text-neutral-400 uppercase tracking-widest">Workflow to Trigger</label>
+                                                     <AfterActionWorkflowPicker
+                                                         value={properties.afterActionWorkflowId || ''}
+                                                         onChange={(id) => handleUpdate('afterActionWorkflowId', id)}
+                                                         selectedProjectId={selectedProjectId}
+                                                     />
+                                                 </div>
+                                             )}
+                                         </div>
+                                     )}
                                  </div>
                              )}
 
@@ -2726,7 +2749,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                      <select 
                                          value={properties.style || 'primary'}
                                          onChange={(e) => handleUpdate('style', e.target.value)}
-                                         className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                                         className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
                                      >
                                          <option value="primary">Primary</option>
                                          <option value="secondary">Secondary</option>
@@ -2777,7 +2800,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                      type="text" 
                                      value={properties.placeholder || ''}
                                      onChange={(e) => handleUpdate('placeholder', e.target.value)}
-                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
+                                     className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none"
                                  />
                              </div>
                              <div className="flex items-center justify-between">
@@ -2843,7 +2866,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                          <label className="text-[11px] font-bold text-neutral-700 dark:text-neutral-300 uppercase">Data Source</label>
                                          <select value={properties.dataSource || ''}
                                              onChange={(e) => handleUpdate('dataSource', e.target.value)}
-                                             className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 outline-none dark:text-white">
+                                             className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary-600/20 outline-none dark:text-white">
                                              <option value="">Select a datasource...</option>
                                              {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
                                              {restApiConnectors.length > 0 && <optgroup label="REST APIs">{restApiConnectors.map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
@@ -3289,50 +3312,114 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      )}
 
                      {type === 'select' && (
-                         <div className="space-y-4">
-                              <label className="text-[11px] font-semibold text-neutral-600">Dropdown Options</label>
-                              <div className="space-y-2">
-                                  {(properties.options || []).map((opt: any, idx: number) => (
-                                      <div key={idx} className="flex gap-1">
-                                          <input 
-                                              placeholder="Label"
-                                              value={opt.label || ''}
-                                              onChange={(e) => {
-                                                  const newOpts = [...(properties.options || [])];
-                                                  newOpts[idx] = { ...newOpts[idx], label: e.target.value };
-                                                  handleUpdate('options', newOpts);
-                                              }}
-                                              className="flex-[2] px-2 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded outline-none"
-                                          />
-                                          <input 
-                                              placeholder="Value"
-                                              value={opt.value || ''}
-                                              onChange={(e) => {
-                                                  const newOpts = [...(properties.options || [])];
-                                                  newOpts[idx] = { ...newOpts[idx], value: e.target.value };
-                                                  handleUpdate('options', newOpts);
-                                              }}
-                                              className="flex-1 px-2 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded outline-none"
-                                          />
-                                          <button 
-                                              onClick={() => {
-                                                  const newOpts = (properties.options || []).filter((_: any, i: number) => i !== idx);
-                                                  handleUpdate('options', newOpts);
-                                              }}
-                                              className="p-1 text-neutral-400 hover:text-rose-600 transition-colors"
-                                          >
-                                              <Minus className="w-3 h-3" />
-                                          </button>
-                                      </div>
-                                  ))}
-                                  <button 
-                                      onClick={() => {
-                                          const newOpts = [...(properties.options || []), { label: '', value: '' }];
-                                          handleUpdate('options', newOpts);
-                                      }}
-                                      className="w-full py-1.5 text-[10px] font-bold text-primary-600 border border-dashed border-primary-200 rounded-lg hover:bg-primary-50 transition-colors uppercase tracking-widest"
-                                  >Add Option</button>
-                              </div>
+                         <div className="space-y-3">
+                             <div className="flex items-center bg-neutral-100 dark:bg-neutral-800 rounded-lg p-0.5 gap-0.5">
+                                 {(['manual', 'table'] as const).map(mode => (
+                                     <button key={mode} type="button"
+                                         onClick={() => handleUpdate('optionsMode', mode)}
+                                         className={cn('flex-1 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-all',
+                                             (properties.optionsMode || 'manual') === mode
+                                                 ? 'bg-white dark:bg-slate-700 shadow-sm text-neutral-900 dark:text-white'
+                                                 : 'text-neutral-400 hover:text-neutral-600')}>
+                                         {mode === 'manual' ? 'Manual' : 'Table Data'}
+                                     </button>
+                                 ))}
+                             </div>
+
+                             {(properties.optionsMode || 'manual') === 'manual' && (
+                                 <div className="space-y-2">
+                                     <label className="text-[11px] font-semibold text-neutral-600">Options</label>
+                                     <div className="space-y-1.5">
+                                         {(properties.options || []).map((opt: any, idx: number) => (
+                                             <div key={idx} className="flex gap-1">
+                                                 <input
+                                                     placeholder="Label"
+                                                     value={opt.label || ''}
+                                                     onChange={(e) => {
+                                                         const newOpts = [...(properties.options || [])];
+                                                         newOpts[idx] = { ...newOpts[idx], label: e.target.value };
+                                                         handleUpdate('options', newOpts);
+                                                     }}
+                                                     className="flex-[2] px-2 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded outline-none"
+                                                 />
+                                                 <input
+                                                     placeholder="Value"
+                                                     value={opt.value || ''}
+                                                     onChange={(e) => {
+                                                         const newOpts = [...(properties.options || [])];
+                                                         newOpts[idx] = { ...newOpts[idx], value: e.target.value };
+                                                         handleUpdate('options', newOpts);
+                                                     }}
+                                                     className="flex-1 px-2 py-1.5 text-xs bg-neutral-50 border border-neutral-200 rounded outline-none"
+                                                 />
+                                                 <button
+                                                     onClick={() => {
+                                                         const newOpts = (properties.options || []).filter((_: any, i: number) => i !== idx);
+                                                         handleUpdate('options', newOpts);
+                                                     }}
+                                                     className="p-1 text-neutral-400 hover:text-rose-600 transition-colors"
+                                                 >
+                                                     <Minus className="w-3 h-3" />
+                                                 </button>
+                                             </div>
+                                         ))}
+                                         <button
+                                             onClick={() => {
+                                                 const newOpts = [...(properties.options || []), { label: '', value: '' }];
+                                                 handleUpdate('options', newOpts);
+                                             }}
+                                             className="w-full py-1.5 text-[10px] font-bold text-primary-600 border border-dashed border-primary-200 rounded-lg hover:bg-primary-50 transition-colors uppercase tracking-widest"
+                                         >Add Option</button>
+                                     </div>
+                                 </div>
+                             )}
+
+                             {properties.optionsMode === 'table' && (
+                                 <div className="space-y-2 p-3 bg-neutral-50 dark:bg-slate-800/50 border border-neutral-200 dark:border-slate-700 rounded-xl animate-in slide-in-from-top-2">
+                                     <label className="text-[10px] font-black text-neutral-400 uppercase tracking-widest block">Table Data Source</label>
+                                     <select
+                                         value={properties.optionsTableId || ''}
+                                         onChange={(e) => handleUpdate('optionsTableId', e.target.value)}
+                                         className="w-full px-2 py-1.5 bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-lg text-xs outline-none dark:text-white"
+                                     >
+                                         <option value="">Select table…</option>
+                                         {availableFields && currentAppData?.dataSourceId
+                                             ? [{ id: currentAppData.dataSourceId, name: 'Current Table' }].concat(
+                                                 (window as any).__nexusTables?.filter((t: any) => t.id !== currentAppData.dataSourceId) || []
+                                               ).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)
+                                             : null}
+                                     </select>
+                                     {properties.optionsTableId && (
+                                         <>
+                                             <div className="grid grid-cols-2 gap-2 mt-1">
+                                                 <div>
+                                                     <label className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">Label Field</label>
+                                                     <select
+                                                         value={properties.optionsLabelField || ''}
+                                                         onChange={(e) => handleUpdate('optionsLabelField', e.target.value)}
+                                                         className="w-full px-2 py-1 bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded text-xs outline-none dark:text-white"
+                                                     >
+                                                         <option value="">Select field…</option>
+                                                         {availableFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
+                                                     </select>
+                                                 </div>
+                                                 <div>
+                                                     <label className="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">Value Field</label>
+                                                     <select
+                                                         value={properties.optionsValueField || ''}
+                                                         onChange={(e) => handleUpdate('optionsValueField', e.target.value)}
+                                                         className="w-full px-2 py-1 bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded text-xs outline-none dark:text-white"
+                                                     >
+                                                         <option value="">Select field…</option>
+                                                         {availableFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
+                                                     </select>
+                                                 </div>
+                                             </div>
+                                             <p className="text-[9px] text-neutral-400 italic mt-1">Unique label/value pairs from this table will populate the dropdown at runtime.</p>
+                                         </>
+                                     )}
+                                 </div>
+                             )}
                          </div>
                      )}
                 </section>

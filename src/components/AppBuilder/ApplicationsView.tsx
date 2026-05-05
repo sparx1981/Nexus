@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Layout, Settings, Trash2, ExternalLink, Database,
   Search, X, PlusCircle, Layers, Copy, LayoutGrid, List,
-  Globe, ChevronRight, Clock, Info
+  Globe, ChevronRight, Clock, Info, Star
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useSchemaStore } from '../../store/schemaStore';
@@ -26,6 +26,7 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
   const [addStep, setAddStep] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [favouriteFilter, setFavouriteFilter] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; name: string } | null>(null);
 
   const [newApp, setNewApp] = useState({
@@ -96,10 +97,18 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
     setDeleteConfirm(null);
   };
 
-  const filteredApps = apps.filter(app =>
-    app.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleToggleFavourite = async (e: React.MouseEvent, app: any) => {
+    e.stopPropagation();
+    if (!selectedProjectId) return;
+    await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', app.id), { favourite: !app.favourite }, { merge: true });
+  };
+
+  const filteredApps = apps.filter(app => {
+    const matchesSearch = app.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFav = !favouriteFilter || app.favourite;
+    return matchesSearch && matchesFav;
+  });
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
@@ -122,9 +131,20 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
             <List className="w-4 h-4" />
           </button>
         </div>
+        {/* Favourites filter */}
+        <button
+          onClick={() => setFavouriteFilter(f => !f)}
+          title={favouriteFilter ? 'Show all applications' : 'Show favourites only'}
+          className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border',
+            favouriteFilter
+              ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 text-amber-600'
+              : 'bg-neutral-100 dark:bg-neutral-800 border-transparent text-neutral-400 hover:text-amber-500')}>
+          <Star className={cn('w-3.5 h-3.5', favouriteFilter && 'fill-amber-400 text-amber-400')} />
+          {favouriteFilter ? 'Favourites' : 'All'}
+        </button>
         <div className="flex-1" />
         <button onClick={() => setShowAddModal(true)}
-          className="text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition-all active:scale-95 hover:opacity-90 shrink-0"
+          className="text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg transition-all active:scale-95 hover:brightness-110 hover:-translate-y-px hover:shadow-md shrink-0"
           style={{ background: 'var(--color-primary)', boxShadow: '0 4px 14px 0 var(--color-primary-light)' }}>
           <Plus className="w-4 h-4" /> New Application
         </button>
@@ -137,14 +157,22 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
           </div>
         ) : filteredApps.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center py-20 bg-white/50 dark:bg-neutral-900/20 rounded-3xl border border-dashed border-neutral-200 dark:border-neutral-800">
-            <div className="w-16 h-16 bg-neutral-100 dark:bg-neutral-800 rounded-2xl flex items-center justify-center mb-4">
-              <PlusCircle className="w-8 h-8 text-neutral-300" />
-            </div>
-            <h4 className="text-lg font-bold text-neutral-900 dark:text-white mb-2">No Applications Found</h4>
-            <p className="text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto mb-6">Start by creating your first business application.</p>
+            {/* G-10: Illustrated empty state */}
+            <svg viewBox="0 0 160 120" className="w-40 h-30 mb-5 opacity-80" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="20" y="30" width="120" height="70" rx="12" fill="var(--color-primary-light,#EBF5FF)" stroke="var(--color-primary,#1A56DB)" strokeWidth="1.5" strokeDasharray="4 3"/>
+              <rect x="36" y="48" width="36" height="26" rx="6" fill="var(--color-primary,#1A56DB)" opacity="0.15"/>
+              <rect x="80" y="48" width="44" height="8" rx="4" fill="var(--color-primary,#1A56DB)" opacity="0.2"/>
+              <rect x="80" y="62" width="30" height="8" rx="4" fill="var(--color-primary,#1A56DB)" opacity="0.12"/>
+              <circle cx="54" cy="61" r="10" fill="var(--color-primary,#1A56DB)" opacity="0.25"/>
+              <path d="M49 61l3.5 3.5L59 57" stroke="var(--color-primary,#1A56DB)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.6"/>
+              <circle cx="80" cy="20" r="12" fill="var(--color-primary,#1A56DB)" opacity="0.9"/>
+              <path d="M74 20h4l4 6V20h4" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round"/>
+            </svg>
+            <h4 className="text-lg font-bold text-neutral-900 dark:text-white mb-2">No Applications Yet</h4>
+            <p className="text-neutral-500 dark:text-neutral-400 max-w-xs mx-auto mb-6">Build your first app by connecting it to a data table and adding components.</p>
             <button onClick={() => setShowAddModal(true)}
-              className="text-white px-6 py-2 rounded-xl font-bold transition-all active:scale-95 hover:opacity-90" style={{ background: 'var(--color-primary)' }}>
-              Get Started
+              className="text-white px-6 py-2 rounded-xl font-bold transition-all active:scale-95 hover:brightness-110 hover:-translate-y-px hover:shadow-md" style={{ background: 'var(--color-primary)' }}>
+              Create First App
             </button>
           </div>
         ) : viewMode === 'card' ? (
@@ -156,16 +184,30 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                 style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
                 onClick={() => onSelectApp(app.id)}>
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-11 h-11 rounded-2xl bg-primary-50 dark:bg-primary-950/30 text-primary-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Layout className="w-5 h-5" />
-                    </div>
+                    <div className="flex items-center gap-2">
+                    {/* G-11: Letter avatar derived from app name */}
+                    {(() => {
+                      const name = app.name || 'A';
+                      const letter = name.charAt(0).toUpperCase();
+                      const hue = name.split('').reduce((acc: number, c: string) => acc + c.charCodeAt(0), 0) % 360;
+                      const bg = `hsl(${hue},55%,88%)`;
+                      const fg = `hsl(${hue},55%,35%)`;
+                      return (
+                        <div className="w-11 h-11 rounded-2xl flex items-center justify-center font-black text-lg group-hover:scale-110 transition-transform" style={{ background: bg, color: fg }}>
+                          {letter}
+                        </div>
+                      );
+                    })()}
                     {app.published
                       ? <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 border border-emerald-200 dark:border-emerald-900/30 rounded-full text-[9px] font-black uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live</span>
                       : <span className="flex items-center gap-1 px-2 py-0.5 bg-neutral-100 dark:bg-slate-800 text-neutral-400 rounded-full text-[9px] font-black uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />Draft</span>}
                   </div>
                   {/* Action buttons — visible on hover */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={e => handleToggleFavourite(e, app)} title={app.favourite ? 'Remove from favourites' : 'Add to favourites'}
+                      className={cn('p-1.5 rounded-lg transition-colors', app.favourite ? 'text-amber-400 hover:text-amber-500' : 'text-neutral-400 hover:text-amber-400')}>
+                      <Star className={cn('w-4 h-4', app.favourite && 'fill-amber-400')} />
+                    </button>
                     <button onClick={e => handleDuplicate(e, app)} title="Duplicate"
                       className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
                       <Copy className="w-4 h-4" />
@@ -246,6 +288,10 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                        <button onClick={e => handleToggleFavourite(e, app)} title={app.favourite ? 'Remove from favourites' : 'Add to favourites'}
+                          className={cn('p-1.5 rounded-lg transition-colors', app.favourite ? 'text-amber-400 hover:text-amber-500' : 'text-neutral-400 hover:text-amber-400')}>
+                          <Star className={cn('w-3.5 h-3.5', app.favourite && 'fill-amber-400')} />
+                        </button>
                         <button onClick={e => handleDuplicate(e, app)} title="Duplicate"
                           className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
                           <Copy className="w-3.5 h-3.5" />

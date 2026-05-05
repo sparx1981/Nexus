@@ -1,6 +1,8 @@
 import React from 'react';
-import { Plus, FileText, ChevronRight, Clock, MoreVertical, Trash2 } from 'lucide-react';
+import { Plus, FileText, ChevronRight, Clock, MoreVertical, Trash2, Globe } from 'lucide-react';
 import { Report } from '../../store/reportStore';
+import { useReportStore } from '../../store/reportStore';
+import { cn } from '../../lib/utils';
 
 interface ReportListProps {
     reports: Report[];
@@ -10,6 +12,13 @@ interface ReportListProps {
 }
 
 export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportListProps) => {
+    const { updateReport } = useReportStore();
+
+    const handlePublish = async (e: React.MouseEvent, report: Report) => {
+        e.stopPropagation();
+        await updateReport(report.id, { published: !(report as any).published } as any);
+    };
+
     return (
         <div className="flex-1 overflow-y-auto p-8" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
             <div className="max-w-6xl mx-auto">
@@ -18,7 +27,7 @@ export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportList
                         <h2 className="text-2xl font-black text-neutral-900 dark:text-white tracking-tight">Reports & Audits</h2>
                         <p className="text-sm text-neutral-500 font-medium">Export and share detailed data snapshots.</p>
                     </div>
-                    <button 
+                    <button
                         onClick={onCreate}
                         className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 text-white rounded-xl font-bold shadow-lg shadow-primary-200 dark:shadow-none hover:bg-primary-700 transition-all active:scale-95"
                     >
@@ -34,7 +43,7 @@ export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportList
                         </div>
                         <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">No reports yet</h3>
                         <p className="text-sm text-neutral-500 dark:text-slate-400 max-w-xs mx-auto mb-6">Generate your first audit or data summary report.</p>
-                        <button 
+                        <button
                             onClick={onCreate}
                             className="text-white px-6 py-2 rounded-xl font-bold transition-all active:scale-95 hover:opacity-90"
                             style={{ background: 'var(--color-primary)' }}
@@ -45,17 +54,22 @@ export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportList
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {reports.map(report => (
-                            <div 
+                            <div
                                 key={report.id}
                                 className="group rounded-2xl p-6 hover:shadow-xl transition-all cursor-pointer relative border"
                                 style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
                                 onClick={() => onSelect(report.id)}
                             >
                                 <div className="flex items-start justify-between mb-4">
-                                    <div className="p-3 bg-neutral-50 dark:bg-black text-neutral-400 rounded-xl border border-neutral-100 dark:border-neutral-800">
-                                        <FileText className="w-6 h-6" />
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-3 bg-indigo-50 dark:bg-indigo-950/20 text-indigo-500 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
+                                            <FileText className="w-6 h-6" />
+                                        </div>
+                                        {(report as any).published
+                                            ? <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 border border-emerald-200 dark:border-emerald-900/30 rounded-full text-[9px] font-black uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live</span>
+                                            : <span className="flex items-center gap-1 px-2 py-0.5 bg-neutral-100 dark:bg-slate-800 text-neutral-400 rounded-full text-[9px] font-black uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />Draft</span>}
                                     </div>
-                                    <button 
+                                    <button
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             onDelete(report.id);
@@ -65,11 +79,11 @@ export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportList
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
-                                
-                                <h4 className="text-lg font-black text-neutral-900 dark:text-white mb-1 group-hover:text-primary-600 transition-colors uppercase text-xs tracking-widest">
+
+                                <h4 className="text-neutral-900 dark:text-white mb-1 group-hover:text-indigo-600 transition-colors uppercase text-xs tracking-widest font-black">
                                     {report.name}
                                 </h4>
-                                <p className="text-xs text-neutral-400 font-medium mb-6 line-clamp-2">
+                                <p className="text-xs text-neutral-400 font-medium mb-6 line-clamp-2 min-h-[32px]">
                                     {report.description || 'No description provided.'}
                                 </p>
 
@@ -78,8 +92,22 @@ export const ReportList = ({ reports, onSelect, onCreate, onDelete }: ReportList
                                         <Clock className="w-3 h-3" />
                                         Created {new Date(report.createdAt).toLocaleDateString()}
                                     </div>
-                                    <div className="text-[10px] font-black text-primary-600 flex items-center gap-1 group-hover:gap-2 transition-all uppercase tracking-widest">
-                                        Review <ChevronRight className="w-4 h-4" />
+                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={(e) => handlePublish(e, report)}
+                                            className={cn(
+                                                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border active:scale-95",
+                                                (report as any).published
+                                                    ? "border-rose-200 dark:border-rose-800 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                                                    : "border-emerald-200 dark:border-emerald-800 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                                            )}
+                                        >
+                                            <Globe className="w-3 h-3" />
+                                            {(report as any).published ? 'Unpublish' : 'Publish'}
+                                        </button>
+                                        <div className="text-[10px] font-black text-primary-600 flex items-center gap-1 group-hover:gap-2 transition-all uppercase tracking-widest">
+                                            Review <ChevronRight className="w-4 h-4" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>

@@ -11,7 +11,9 @@ import {
     Type,
     ArrowLeft,
     PieChart as PieIcon,
-    Table as TableIcon
+    Table as TableIcon,
+    Hash,
+    Image as ImageIcon
 } from 'lucide-react';
 import { Dashboard, DashboardCard, DashboardCardType } from '../../types/dashboard';
 import { cn } from '../../lib/utils';
@@ -64,19 +66,22 @@ export const DashboardDesigner = ({ dashboard, onClose }: DashboardDesignerProps
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <div className="flex bg-neutral-100 dark:bg-neutral-900 p-1 rounded-xl border border-neutral-200 dark:border-neutral-800">
-                        {(['kpi', 'bar', 'line', 'pie', 'table'] as const).map(type => (
-                            <button 
-                                key={type} 
+                    <div className="flex bg-neutral-100 dark:bg-neutral-900 p-1 rounded-xl border border-neutral-200 dark:border-neutral-800 gap-1">
+                        {([
+                            { type: 'kpi',   icon: <Hash className="w-3.5 h-3.5" />,      label: 'KPI'    },
+                            { type: 'bar',   icon: <BarChart3 className="w-3.5 h-3.5" />, label: 'Bar'    },
+                            { type: 'line',  icon: <TrendingUp className="w-3.5 h-3.5" />,label: 'Line'   },
+                            { type: 'pie',   icon: <PieIcon className="w-3.5 h-3.5" />,   label: 'Pie'    },
+                            { type: 'table', icon: <TableIcon className="w-3.5 h-3.5" />, label: 'Table'  },
+                        ] as const).map(({ type, icon, label }) => (
+                            <button
+                                key={type}
                                 onClick={() => handleAddCard(type)}
-                                className="p-2 rounded-lg hover:bg-white dark:hover:bg-black text-neutral-400 hover:text-primary-600 transition-all active:scale-90"
-                                title={`Add ${type} card`}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white dark:hover:bg-black text-neutral-400 hover:text-primary-600 transition-all active:scale-90 text-[10px] font-black uppercase tracking-wider"
+                                title={`Add ${label} widget`}
                             >
-                                {type === 'kpi' && <Type className="w-4 h-4" />}
-                                {type === 'bar' && <BarChart3 className="w-4 h-4" />}
-                                {type === 'line' && <TrendingUp className="w-4 h-4" />}
-                                {type === 'pie' && <PieIcon className="w-4 h-4" />}
-                                {type === 'table' && <TableIcon className="w-4 h-4" />}
+                                {icon}
+                                {label}
                             </button>
                         ))}
                     </div>
@@ -103,7 +108,7 @@ export const DashboardDesigner = ({ dashboard, onClose }: DashboardDesignerProps
                                 >
                                     <div className="bg-white dark:bg-[#121212] border border-neutral-200 dark:border-neutral-800 rounded-2xl p-6 shadow-sm min-h-[240px] flex flex-col justify-center items-center text-center">
                                         <div className="p-4 bg-neutral-50 dark:bg-black rounded-2xl text-neutral-300 mb-4 border border-neutral-100 dark:border-neutral-800">
-                                             {card.type === 'kpi' && <Type className="w-8 h-8" />}
+                                             {card.type === 'kpi' && <Hash className="w-8 h-8" />}
                                              {card.type === 'bar' && <BarChart3 className="w-8 h-8" />}
                                              {card.type === 'line' && <TrendingUp className="w-8 h-8" />}
                                              {card.type === 'pie' && <PieIcon className="w-8 h-8" />}

@@ -13,7 +13,7 @@ import {
     Pie, 
     Cell 
 } from 'recharts';
-import { TrendingUp, Users, DollarSign, Target, Database, MoreVertical, Trash2, Edit2 } from 'lucide-react';
+import { TrendingUp, Users, DollarSign, Target, Database, MoreVertical, Trash2, Edit2, PieChart as PieChartIcon, Table as TableIcon } from 'lucide-react';
 import { DashboardCard as ICard } from '../../types/dashboard';
 import { cn } from '../../lib/utils';
 import { db } from '../../lib/firebase';
@@ -185,8 +185,8 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
                         {card.type === 'kpi' && <Target className="w-4 h-4" />}
                         {card.type === 'bar' && <BarChart className="w-4 h-4" />}
                         {card.type === 'line' && <TrendingUp className="w-4 h-4" />}
-                        {card.type === 'pie' && <Database className="w-4 h-4" />}
-                        {card.type === 'table' && <Users className="w-4 h-4" />}
+                        {card.type === 'pie' && <PieChartIcon className="w-4 h-4" />}
+                        {card.type === 'table' && <TableIcon className="w-4 h-4" />}
                     </div>
                     <div>
                         <h5 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest leading-none mb-1">Insight View</h5>

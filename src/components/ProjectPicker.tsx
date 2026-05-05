@@ -104,6 +104,17 @@ export function ProjectPicker() {
 
   const handleDeleteProject = async (projectId: string) => {
     try {
+      // SEC-C04: Delete all subcollections before deleting the workspace root document
+      // Firestore does not cascade-delete subcollections automatically.
+      const SUBCOLLECTIONS = ['tables', 'tableData', 'apps', 'workflows', 'dashboards', 'reports', 'connectors', 'auditLogs', 'workflowLogs', 'config'];
+      for (const sub of SUBCOLLECTIONS) {
+        try {
+          const snap = await getDocs(collection(db, 'workspaces', projectId, sub));
+          for (const d of snap.docs) {
+            await deleteDoc(d.ref);
+          }
+        } catch { /* subcollection may not exist */ }
+      }
       await deleteDoc(doc(db, 'workspaces', projectId));
       setProjects(prev => prev.filter(p => p.id !== projectId));
     } catch (e) {

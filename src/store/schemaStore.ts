@@ -104,17 +104,25 @@ export const useSchemaStore = create<SchemaStore>((set, get) => ({
     const wsId = useAuthStore.getState().selectedProjectId;
     if (!wsId) return;
 
-    // In-memory update
+    // In-memory update (optimistic)
     set((state) => ({
-      tables: state.tables.map((t) => 
-        t.id === tableId ? { ...t, fields: [...t.fields, field] } : t
+      tables: state.tables.map((t) =>
+        t.id === tableId ? { ...t, fields: [...(t.fields || []), field] } : t
       )
     }));
-    // Firestore persistence
+
+    // Firestore: read-then-write to avoid race with onSnapshot overwriting optimistic state
     const tableRef = doc(db, 'workspaces', wsId, 'tables', tableId);
-    const table = get().tables.find(t => t.id === tableId);
-    if (table) {
-        await updateDoc(tableRef, { fields: table.fields });
+    try {
+      const snap = await getDoc(tableRef);
+      const existingFields: any[] = snap.exists() ? (snap.data()?.fields || []) : [];
+      const merged = existingFields.some((f: any) => f.id === field.id)
+        ? existingFields
+        : [...existingFields, field];
+      await setDoc(tableRef, { fields: merged }, { merge: true });
+    } catch {
+      const table = get().tables.find(t => t.id === tableId);
+      if (table) await setDoc(tableRef, { fields: table.fields || [] }, { merge: true });
     }
   },
   addRelationship: async (rel) => {

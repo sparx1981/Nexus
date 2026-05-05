@@ -17,6 +17,7 @@ export interface Report {
     workspaceId: string;
     elements: ReportElement[];
     createdAt: string;
+    published?: boolean;
 }
 
 interface ReportStore {

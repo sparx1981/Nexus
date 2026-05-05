@@ -104,6 +104,24 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
     return () => unsubs.forEach(u => u());
   }, [appData, workspaceId]);
 
+  // ── M-01: Load human-readable app names for the navigation menu ──────────
+  const [menuAppNames, setMenuAppNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const ids: string[] = projectSettings?.menuAppIds || [];
+    if (!ids.length) return;
+    Promise.all(
+      ids.map((aid: string) =>
+        getDoc(doc(db, 'workspaces', workspaceId, 'apps', aid))
+          .then(snap => ({ id: aid, name: snap.exists() ? (snap.data().name || aid) : aid }))
+          .catch(() => ({ id: aid, name: aid }))
+      )
+    ).then(results => {
+      const map: Record<string, string> = {};
+      results.forEach(r => { map[r.id] = r.name; });
+      setMenuAppNames(map);
+    });
+  }, [projectSettings, workspaceId]);
+
   // ── 4. Auth gate ─────────────────────────────────────────────────────────
   if (requireSignIn === null || isAuthorised === null) {
     return (
@@ -287,7 +305,7 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
                       aid === appId && "bg-white/20"
                     )}
                   >
-                    {aid}
+                    {menuAppNames[aid] || aid}
                   </button>
                 ))
               )}

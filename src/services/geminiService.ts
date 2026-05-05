@@ -80,7 +80,7 @@ export async function getChatResponse(messages: { role: 'user' | 'assistant'; co
 // ── Nexus AI Assist ───────────────────────────────────────────────────────────
 
 export interface NexusAction {
-  type: 'query_data' | 'create_table' | 'add_field' | 'create_app' | 'create_workflow' | 'multi_action' | 'set_project_settings' | 'none';
+  type: 'query_data' | 'create_table' | 'add_field' | 'create_app' | 'create_workflow' | 'create_dashboard' | 'create_report' | 'multi_action' | 'set_project_settings' | 'none';
   description: string;
   payload: any;
 }
@@ -150,7 +150,13 @@ Always one of these two shapes:
 PAYLOAD SCHEMAS:
 
 query_data:
-{ "tableId": "string", "tableName": "string", "description": "what we are looking for", "limit": 50, "orderByField": "fieldName or null", "orderDirection": "desc" }
+{ "tableId": "string", "tableName": "string", "description": "what we are looking for", "limit": 50, "orderByField": "fieldName or null", "orderDirection": "desc", "filters": [{ "field": "fieldName", "operator": "==|>|<|>=|<=|!=", "value": "any" }] }
+
+create_dashboard:
+{ "name": "Dashboard Name", "cards": [{ "type": "kpi|bar|line|pie|table", "title": "Card title", "dataSourceId": "table name", "field": "fieldName", "aggregation": "count|sum|avg" }] }
+
+create_report:
+{ "name": "Report Name", "sections": [{ "type": "table|chart|text", "title": "Section title", "dataSourceId": "table name", "columns": ["field1","field2"] }] }
 
 create_table:
 { "name": "TableName", "description": "optional", "fields": [{ "name": "Field Name", "type": "text|long_text|number|currency|date|datetime|boolean|single_select|multi_select|email|phone|url", "required": false, "options": ["for select types only"] }] }
@@ -165,7 +171,7 @@ set_project_settings:
 { "headingBackgroundColour": "#hex", "applicationBackgroundColour": "#hex", "componentPrimaryColour": "#hex", "componentSecondaryColour": "#hex", "buttonColourStandard": "#hex", "buttonColourHover": "#hex", "buttonColourClicked": "#hex", "headingText": "optional text" }
 
 multi_action:
-{ "projectSummary": "What is being built", "steps": [{ "type": "create_table|create_app|create_workflow|set_project_settings", "description": "Step description", "payload": { ...same schemas as above... } }] }
+{ "projectSummary": "What is being built", "steps": [{ "type": "create_table|create_app|create_workflow|create_dashboard|create_report|set_project_settings", "description": "Step description", "payload": { ...same schemas as above... } }] }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RULES
@@ -263,6 +269,94 @@ function trimContext(ctx: object): object {
       ? c.schema.map((t: any) => ({ id: t.id, name: t.name, fields: t.fields }))
       : c.schema,
   };
+}
+
+/** AI-M06: Build a compact project summary (counts only) for follow-up messages.
+ *  Reduces token usage by ~70% on non-first messages. */
+export function buildCompactContext(ctx: any): object {
+  return {
+    tableCount: (ctx.schema || []).length,
+    appCount: (ctx.applications || []).length,
+    workflowCount: (ctx.workflows || []).length,
+    recentLogSummary: (ctx.recentLogs || []).slice(0, 3).map((l: any) => ({
+      name: l.workflowName, status: l.status, at: l.triggeredAt
+    })),
+  };
+}
+
+// ── Streaming variant (AI-M01) ────────────────────────────────────────────────
+
+/**
+ * Streaming version of getNexusAssistantResponse.
+ * Calls onChunk with each text fragment as it arrives, then resolves with
+ * the fully-parsed NexusAssistantResponse once the stream is complete.
+ */
+export async function streamNexusAssistantResponse(
+  messages: { role: 'user' | 'assistant'; content: string }[],
+  projectContext: object,
+  onChunk: (text: string) => void,
+  onRetry?: (attempt: number, delayMs: number) => void
+): Promise<NexusAssistantResponse> {
+  const apiKey = resolveApiKey();
+  if (!apiKey) throw new Error('NO_API_KEY');
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const MAX_ATTEMPTS = 4;
+  const BACKOFF_MS = [0, 8_000, 20_000, 45_000];
+  const trimmedContext = trimContext(projectContext);
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      const delay = BACKOFF_MS[attempt - 1];
+      onRetry?.(attempt, delay);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+
+    for (const modelName of MODEL_PRIORITY) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          systemInstruction: NEXUS_SYSTEM_INSTRUCTION,
+        });
+
+        const priorMessages = messages.slice(0, -1).filter(m => m.content.trim() !== '');
+        const firstUserIdx = priorMessages.findIndex(m => m.role === 'user');
+        const trimmedHistory = firstUserIdx === -1 ? [] : priorMessages.slice(firstUserIdx);
+        const history = trimmedHistory.map(m => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        }));
+
+        const chat = model.startChat({ history, generationConfig: { maxOutputTokens: 6000 } });
+
+        const userQuestion = messages[messages.length - 1].content;
+        const userTurn = `CURRENT PROJECT CONTEXT:\n${JSON.stringify(trimmedContext)}\n\nUSER: ${userQuestion}`;
+
+        // AI-M01: Use sendMessageStream for real-time chunk delivery
+        const streamResult = await chat.sendMessageStream(userTurn);
+        let fullText = '';
+        for await (const chunk of streamResult.stream) {
+          const text = chunk.text();
+          if (text) {
+            fullText += text;
+            onChunk(text);
+          }
+        }
+
+        console.log(`[Nexus AI Stream] Success with model: ${modelName}`);
+        return robustParseResponse(fullText);
+      } catch (error: any) {
+        const code = extractHttpCode(error);
+        if (code === 403 || code === 404) continue;
+        if (code === 429) {
+          if (attempt < MAX_ATTEMPTS) break;
+          throw new Error('RATE_LIMIT');
+        }
+        throw new Error(error?.message ?? 'AI Assistant is temporarily unavailable.');
+      }
+    }
+  }
+  throw new Error('RATE_LIMIT');
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────

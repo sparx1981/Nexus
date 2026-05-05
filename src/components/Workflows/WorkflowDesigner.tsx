@@ -23,6 +23,7 @@ import { useSchemaStore } from '../../store/schemaStore';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
 import { useAuthStore } from '../../store/authStore';
+import { startEmailPolling, startScheduledPolling } from '../../services/workflowService';
 
 const NODE_TYPES_CONFIG = {
     trigger: {
@@ -53,13 +54,20 @@ type ConditionRow   = { id: string; field: string; operator: string; value: stri
 type ConditionGroup = { id: string; conditions: ConditionRow[]; logic?: 'AND'|'OR' };
 type HttpHeader     = { id: string; key: string; value: string };
 
+/* G-08: Map node categories to CSS variables so they respect the active colour scheme */
+const NODE_HEADER_STYLE: Record<string, React.CSSProperties> = {
+    trigger:  { background: 'var(--color-primary)' },
+    action:   { background: 'var(--color-primary)', filter: 'brightness(0.85)' },
+    logic:    { background: 'var(--color-accent, #d97706)' },
+};
+
 /* Standard workflow node */
 const WorkflowNode = ({ data, selected }: NodeProps<any>) => {
     const config = (NODE_TYPES_CONFIG as any)[data.category]?.[data.type];
     if (!config) return null;
     return (
         <div className={cn("bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-xl min-w-[180px] overflow-hidden transition-all group/node relative", selected ? "border-primary-600 ring-4 ring-primary-600/10" : "border-neutral-200 dark:border-slate-800")}>
-            <div className={cn("px-3 py-2 flex items-center justify-between gap-2 text-white", config.color)}>
+            <div className="px-3 py-2 flex items-center justify-between gap-2 text-white" style={NODE_HEADER_STYLE[data.category] ?? { background: 'var(--color-primary)' }}>
                 <div className="flex items-center gap-2">
                     {config.icon}
                     <span className="font-bold text-[11px] uppercase tracking-wider">{data.category}</span>
@@ -92,7 +100,7 @@ const WorkflowNode = ({ data, selected }: NodeProps<any>) => {
 /* Condition node — dual output handles */
 const ConditionNode = ({ data, selected }: NodeProps<any>) => (
     <div className={cn("bg-white dark:bg-slate-900 border-2 rounded-2xl shadow-xl min-w-[200px] overflow-hidden transition-all relative group/node", selected ? "border-amber-500 ring-4 ring-amber-500/10" : "border-neutral-200 dark:border-slate-800")}>
-        <div className="px-3 py-2 flex items-center justify-between gap-2 text-white bg-amber-500">
+        <div className="px-3 py-2 flex items-center justify-between gap-2 text-white" style={{ background: 'var(--color-accent, #d97706)' }}>
             <div className="flex items-center gap-2"><Split className="w-4 h-4"/> <span className="font-bold text-[11px] uppercase tracking-wider">Logic</span></div>
             {data.onDelete && (
                 <button
@@ -544,7 +552,10 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                             const ns = workflowStatus==='active'?'draft':'active';
                             await setDoc(doc(db,'workspaces',selectedProjectId,'workflows',workflowId),{status:ns},{merge:true});
                             setWorkflowStatus(ns);
-                            showToast(ns==='active'?'Workflow activated — will now trigger on events':'Workflow set to draft');
+                            // Restart pollers so draft workflows immediately stop and active ones start
+                            startEmailPolling(selectedProjectId).catch(console.error);
+                            startScheduledPolling(selectedProjectId).catch(console.error);
+                            showToast(ns==='active'?'Workflow activated — will now trigger on events':'Workflow set to draft — will no longer run');
                         }}
                         className={cn("flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all border",
                             workflowStatus==='active'?"border-emerald-300 text-emerald-600 bg-emerald-50 hover:bg-emerald-100":"border-neutral-300 text-neutral-500 bg-white hover:bg-neutral-50"

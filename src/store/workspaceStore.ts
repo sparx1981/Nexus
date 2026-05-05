@@ -14,7 +14,7 @@ interface WorkspaceStore {
     currentWorkspace: Workspace | null;
     isLoading: boolean;
     setCurrentWorkspace: (workspace: Workspace | null) => void;
-    fetchWorkspace: (id: string) => Promise<void>;
+    fetchWorkspace: (id: string, ownerUid?: string) => Promise<void>;
     updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>;
 }
 
@@ -22,7 +22,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
     currentWorkspace: null,
     isLoading: false,
     setCurrentWorkspace: (currentWorkspace) => set({ currentWorkspace }),
-    fetchWorkspace: async (id) => {
+    fetchWorkspace: async (id, ownerUid) => {
         set({ isLoading: true });
         try {
             const ref = doc(db, 'workspaces', id);
@@ -30,11 +30,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
             if (snap.exists()) {
                 set({ currentWorkspace: { id: snap.id, ...snap.data() } as Workspace });
             } else {
-                // Create default workspace if not exists
+                // Create default workspace owned by the current user (never 'system')
                 const newWS: Workspace = {
                     id,
                     name: 'Default Workspace',
-                    ownerId: 'system',
+                    ownerId: ownerUid || id, // fallback to the workspace ID if UID somehow missing
                     createdAt: new Date().toISOString()
                 };
                 await setDoc(ref, newWS);

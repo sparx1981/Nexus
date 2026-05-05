@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { 
   BarChart3, 
@@ -33,6 +33,7 @@ import {
   SlidersHorizontal,
   RotateCcw,
   ArrowLeftRight,
+  Menu,
   BellOff,
 } from 'lucide-react';
 import { useProjectSettingsStore, DEFAULT_PROJECT_SETTINGS } from './store/projectSettingsStore';
@@ -53,7 +54,7 @@ import { useSchemaStore } from './store/schemaStore';
 import { useAuthStore } from './store/authStore';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { LoginPage } from './components/Auth/LoginPage';
 import { ProjectPicker } from './components/ProjectPicker';
 import { useSyncData } from './hooks/useSyncData';
@@ -71,6 +72,7 @@ interface SidebarItemProps {
 const SidebarItem = ({ icon, label, active, onClick, collapsed }: SidebarItemProps) => (
   <button
     onClick={onClick}
+    title={collapsed ? label : undefined}
     className={cn(
       "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 group",
       active 
@@ -91,7 +93,7 @@ const SidebarItem = ({ icon, label, active, onClick, collapsed }: SidebarItemPro
 
 const SectionLabel = ({ label, collapsed }: { label: string; collapsed?: boolean }) => (
   !collapsed && (
-    <div className="px-3 mt-6 mb-2 text-[9px] font-black uppercase tracking-widest text-neutral-400 dark:text-slate-600">
+    <div className="px-3 mt-6 mb-2 text-[11px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-slate-600">
       {label}
     </div>
   )
@@ -123,9 +125,13 @@ function App() {
   const [editingAppId, setEditingAppId] = useState<string | null>(null);
   const [currentAppName, setCurrentAppName] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [hasApps, setHasApps] = useState(false);
+  const [hasWorkflows, setHasWorkflows] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -218,11 +224,20 @@ function App() {
 
   useEffect(() => {
     if (isAuthenticated && selectedProjectId) {
-      fetchWorkspace(selectedProjectId);
+      fetchWorkspace(selectedProjectId, user?.id);
       const unsubscribe = loadTables();
       return () => unsubscribe();
     }
   }, [isAuthenticated, selectedProjectId, fetchWorkspace, loadTables]);
+
+  // I-04: Derive checklist completion from live Firestore data
+  useEffect(() => {
+    if (!isAuthenticated || !selectedProjectId) return;
+    getDocs(collection(db, 'workspaces', selectedProjectId, 'apps'))
+      .then(snap => setHasApps(!snap.empty)).catch(() => {});
+    getDocs(collection(db, 'workspaces', selectedProjectId, 'workflows'))
+      .then(snap => setHasWorkflows(!snap.empty)).catch(() => {});
+  }, [isAuthenticated, selectedProjectId]);
   
   useEffect(() => {
     if (isAuthenticated && selectedProjectId) {
@@ -350,10 +365,19 @@ function App() {
     <div className={cn(
       "flex h-screen w-screen overflow-hidden font-sans transition-colors duration-300",
     )} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+      {/* M-03: Mobile sidebar backdrop */}
+      {mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
       {/* Sidebar */}
       <aside 
         className={cn(
-          "transition-all duration-200 flex flex-col z-30 shadow-sm",
+          "transition-all duration-200 flex flex-col z-40 shadow-sm",
+          "fixed inset-y-0 left-0 md:relative md:translate-x-0",
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           sidebarCollapsed ? "w-16" : "w-60 shadow-xl shadow-neutral-200/50"
         )}
         style={{ background: 'var(--bg-surface)', borderRight: '1px solid var(--border-color)' }}
@@ -361,7 +385,9 @@ function App() {
         {/* Brand */}
         <div className="h-14 flex items-center px-4 gap-3 overflow-hidden shrink-0" style={{ borderBottom: '1px solid var(--border-color)' }}>
           <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-lg" style={{ background: 'var(--color-primary)' }}>
-            <Box className="text-white w-5 h-5" />
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 19V5h2.5l9 11V5H19v14h-2.5L7.5 8v11H5z" fill="white"/>
+            </svg>
           </div>
           {!sidebarCollapsed && (
             <span className="font-bold text-lg tracking-tight uppercase" style={{ color: 'var(--text-primary)' }}>Nexus</span>
@@ -390,6 +416,14 @@ function App() {
           </button>
 
           <SidebarItem 
+            icon={<Database className="w-5 h-5" />} 
+            label="Data Studio" 
+            active={activeTab === 'data'} 
+            onClick={() => setActiveTab('data')}
+            collapsed={sidebarCollapsed}
+          />
+
+          <SidebarItem 
             icon={<Layers className="w-5 h-5" />} 
             label="Applications" 
             active={activeTab === 'apps'} 
@@ -402,14 +436,6 @@ function App() {
             label="Workflows" 
             active={activeTab === 'workflows'} 
             onClick={() => setActiveTab('workflows')}
-            collapsed={sidebarCollapsed}
-          />
-
-          <SidebarItem 
-            icon={<Database className="w-5 h-5" />} 
-            label="Data Studio" 
-            active={activeTab === 'data'} 
-            onClick={() => setActiveTab('data')}
             collapsed={sidebarCollapsed}
           />
           
@@ -456,6 +482,13 @@ function App() {
         {/* Top Header */}
         <header className="h-14 flex items-center justify-between px-6 shrink-0 z-20" style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-color)' }}>
           <div className="flex items-center gap-4 flex-1">
+            {/* M-03: Mobile hamburger */}
+            <button
+              className="block md:hidden p-1.5 rounded-lg text-neutral-500 hover:bg-neutral-100 transition-all"
+              onClick={() => setMobileSidebarOpen(true)}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <h1 className="text-lg font-bold tracking-tight min-w-[120px]" style={{ color: 'var(--text-primary)' }}>
               {activeTab === 'apps' && (editingAppId && currentAppName ? `Applications  ›  ${currentAppName}` : "Applications")}
               {activeTab === 'data' && "Data Studio"}
@@ -463,7 +496,7 @@ function App() {
               {activeTab === 'dashboards' && "Dashboards"}
               {activeTab === 'reports' && "Reports"}
               {activeTab === 'trimble' && "Trimble Connect"}
-              {activeTab === 'settings' && "Settings"}
+              {activeTab === 'settings' && "Project Settings"}
             </h1>
             
             {/* Global Search */}
@@ -579,7 +612,7 @@ function App() {
                     >
                       <div
                         className={cn(
-                          "w-8 h-8 rounded-full transition-all hover:scale-110",
+                          "w-8 h-8 rounded-full transition-all hover:scale-110 relative",
                           colorScheme === scheme.name && "scale-110"
                         )}
                         style={{
@@ -587,8 +620,14 @@ function App() {
                           outline: colorScheme === scheme.name ? `3px solid ${scheme.color}` : 'none',
                           outlineOffset: '2px',
                         }}
-                      />
-                      <span className="text-[8px] font-bold uppercase" style={{ color: 'var(--text-secondary)' }}>{scheme.label}</span>
+                      >
+                        {colorScheme === scheme.name && (
+                          <svg className="absolute inset-0 m-auto w-4 h-4" viewBox="0 0 16 16" fill="none">
+                            <path d="M3 8l3.5 3.5L13 5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-medium uppercase" style={{ color: 'var(--text-secondary)' }}>{scheme.label}</span>
                     </button>
                   ))}
                 </div>
@@ -635,6 +674,14 @@ function App() {
                                              <div className="flex items-center gap-2">
                                                {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary-500 shrink-0"></span>}
                                                <span className="text-[10px] text-neutral-400 font-medium">{n.time}</span>
+                                               {/* N-05: Per-notification dismiss */}
+                                               <button
+                                                 onClick={e => { e.stopPropagation(); setNotifications(ns => ns.filter(m => m.id !== n.id)); }}
+                                                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-neutral-200 transition-all"
+                                                 title="Dismiss"
+                                               >
+                                                 <X className="w-3 h-3 text-neutral-400" />
+                                               </button>
                                              </div>
                                          </div>
                                          <p className="text-xs text-neutral-600 dark:text-neutral-400 font-medium leading-relaxed">{n.message}</p>
@@ -667,6 +714,7 @@ function App() {
             {/* Profile Menu */}
             <div className="relative">
               <button 
+                ref={userMenuButtonRef}
                 onClick={() => {
                     setUserMenuOpen(!userMenuOpen);
                     setNotifOpen(false);
@@ -683,10 +731,16 @@ function App() {
                 <span className="text-sm font-bold text-neutral-700 pr-1">{user?.firstName}</span>
               </button>
 
-              {userMenuOpen && (
+              {userMenuOpen && ReactDOM.createPortal(
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)}></div>
-                  <div className="absolute right-0 mt-3 w-56 bg-white rounded-2xl shadow-2xl border border-neutral-200 py-2 z-50 animate-in fade-in slide-in-from-top-3 duration-200">
+                  <div className="fixed inset-0 z-[400]" onClick={() => setUserMenuOpen(false)}></div>
+                  <div
+                    className="fixed w-56 bg-white rounded-2xl shadow-2xl border border-neutral-200 py-2 z-[401] animate-in fade-in slide-in-from-top-3 duration-200"
+                    style={(() => {
+                      const rect = userMenuButtonRef.current?.getBoundingClientRect();
+                      return rect ? { top: rect.bottom + 8, right: window.innerWidth - rect.right } : { top: 56, right: 16 };
+                    })()}
+                  >
                     <div className="px-4 py-3 border-b border-neutral-100 mb-2">
                       <p className="text-sm font-bold text-neutral-900">{user?.firstName} {user?.lastName}</p>
                       <p className="text-[10px] font-medium text-neutral-400 truncate">{user?.email}</p>
@@ -696,14 +750,6 @@ function App() {
                       className="w-full text-left px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-50 flex items-center gap-3"
                     >
                         <LayoutGrid className="w-4 h-4 text-neutral-400" /> Switch Project
-                    </button>
-                    <button title="Coming soon — profile settings are in development" className="w-full text-left px-4 py-2 text-xs font-bold text-neutral-400 hover:bg-neutral-50 flex items-center gap-3 cursor-default" tabIndex={-1}>
-                        <User className="w-4 h-4 text-neutral-300" /> Profile Settings
-                        <span className="ml-auto text-[9px] font-black uppercase tracking-widest bg-neutral-100 text-neutral-400 px-1.5 py-0.5 rounded">Soon</span>
-                    </button>
-                    <button title="Coming soon — workspace data export is in development" className="w-full text-left px-4 py-2 text-xs font-bold text-neutral-400 hover:bg-neutral-50 flex items-center gap-3 cursor-default" tabIndex={-1}>
-                        <Database className="w-4 h-4 text-neutral-300" /> Workspace Data
-                        <span className="ml-auto text-[9px] font-black uppercase tracking-widest bg-neutral-100 text-neutral-400 px-1.5 py-0.5 rounded">Soon</span>
                     </button>
                     <div className="h-[1px] bg-neutral-100 my-2"></div>
                     <button 
@@ -716,7 +762,8 @@ function App() {
                       Sign Out
                     </button>
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           </div>
@@ -742,9 +789,9 @@ function App() {
             {gettingStartedOpen && (
               <div className="px-6 pb-4 flex flex-wrap gap-3">
                 {[
-                  { step: 1, label: 'Create a table in Data Studio', tab: 'data', done: false },
-                  { step: 2, label: 'Build your first application', tab: 'apps', done: false },
-                  { step: 3, label: 'Set up a workflow', tab: 'workflows', done: false },
+                  { step: 1, label: 'Create a table in Data Studio', tab: 'data', done: schemaTables.length > 0 },
+                  { step: 2, label: 'Build your first application', tab: 'apps', done: hasApps },
+                  { step: 3, label: 'Set up a workflow', tab: 'workflows', done: hasWorkflows },
                 ].map(({ step, label, tab, done }) => (
                   <button
                     key={step}
@@ -789,7 +836,7 @@ function App() {
       {/* AI Assistant FAB */}
       <button 
         onClick={() => setAiOpen(!aiOpen)}
-        title="Nexus AI Assistant"
+        title="Ask Nexus AI"
         className={cn(
             "fixed bottom-6 right-6 w-14 h-14 text-white rounded-2xl shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 group",
             aiOpen && "scale-0 opacity-0"
@@ -798,7 +845,7 @@ function App() {
       >
         <Sparkles className="w-6 h-6 group-hover:animate-pulse" />
         <span className="absolute right-16 bg-neutral-900 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
-          Nexus AI Assistant
+          Ask Nexus AI
         </span>
       </button>
     </div>

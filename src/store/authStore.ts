@@ -27,8 +27,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   isLoading: true,
   selectedProjectId: localStorage.getItem('nexus_project_id'),
-  trimbleToken: localStorage.getItem('trimble_token'),
-  trimbleUserId: localStorage.getItem('trimble_user_id'),
+  trimbleToken: sessionStorage.getItem('trimble_token'),
+  trimbleUserId: sessionStorage.getItem('trimble_user_id'),
   setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
   setSelectedProjectId: (projectId) => {
     if (projectId) localStorage.setItem('nexus_project_id', projectId);
@@ -36,15 +36,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ selectedProjectId: projectId });
   },
   setTrimbleAuth: (token, userId) => {
-    localStorage.setItem('trimble_token', token);
-    localStorage.setItem('trimble_user_id', userId);
+    sessionStorage.setItem('trimble_token', token);
+    sessionStorage.setItem('trimble_user_id', userId);
     set({ trimbleToken: token, trimbleUserId: userId });
   },
   logout: () => {
     import('../lib/firebase').then(({ auth }) => auth.signOut());
     localStorage.removeItem('nexus_project_id');
-    localStorage.removeItem('trimble_token');
-    localStorage.removeItem('trimble_user_id');
+    sessionStorage.removeItem('trimble_token');
+    sessionStorage.removeItem('trimble_user_id');
     set({ user: null, isAuthenticated: false, selectedProjectId: null, trimbleToken: null, trimbleUserId: null });
   },
 }));
