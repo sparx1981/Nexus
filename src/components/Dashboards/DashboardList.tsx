@@ -30,17 +30,18 @@ export const DashboardList = ({ dashboards, onSelect, onCreate, onDelete }: Dash
                 </div>
 
                 {dashboards.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed rounded-3xl" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}>
-                        <div className="w-16 h-16 bg-neutral-50 flex items-center justify-center rounded-2xl mb-4">
-                            <BarChart3 className="w-8 h-8 text-neutral-300" />
+                    <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed rounded-3xl text-center" style={{ background: "var(--bg-surface)", borderColor: "var(--border-color)" }}>
+                        <div className="w-12 h-12 bg-neutral-100 dark:bg-slate-800 flex items-center justify-center rounded-2xl mb-4">
+                            <BarChart3 className="w-6 h-6 text-neutral-300 dark:text-slate-600" />
                         </div>
-                        <h3 className="text-lg font-bold text-neutral-900 mb-1">No dashboards found</h3>
-                        <p className="text-sm text-neutral-500 mb-6">Create your first dashboard to start analyzing data.</p>
+                        <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-1">No dashboards yet</h3>
+                        <p className="text-sm text-neutral-500 dark:text-slate-400 max-w-xs mx-auto mb-6">Build your first dashboard to start visualizing data insights.</p>
                         <button 
                             onClick={onCreate}
-                            className="text-primary-600 font-bold hover:underline"
+                            className="text-white px-6 py-2 rounded-xl font-bold transition-all active:scale-95 hover:opacity-90"
+                            style={{ background: 'var(--color-primary)' }}
                         >
-                            Build your first insight panel
+                            Create your first Dashboard
                         </button>
                     </div>
                 ) : (

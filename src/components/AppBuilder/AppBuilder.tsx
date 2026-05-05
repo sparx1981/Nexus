@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
     Layout, 
     Type, 
@@ -32,15 +32,22 @@ import {
     Database,
     Globe,
     GripHorizontal,
+    GripVertical,
     PieChart as PieChartIcon,
     PanelRightClose,
     PanelRightOpen,
     Maximize,
     Rows,
     AlignJustify,
+    Search,
     RotateCcw,
-  ArrowLeft,
-    RotateCw
+    ArrowLeft,
+    RotateCw,
+    Cloud,
+    Keyboard,
+    AlertTriangle,
+    ChevronsUp,
+    ChevronsDown,
 } from 'lucide-react';
 import { useProjectSettingsStore } from '../../store/projectSettingsStore';
 import { 
@@ -110,7 +117,10 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
     const [customWidth, setCustomWidth] = useState(1200);
     const [activeDragItem, setActiveDragItem] = useState<any>(null);
     const [showPreview, setShowPreview] = useState(false);
-    const [showShortcuts, setShowShortcuts] = useState(false);
+    const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [isDirty, setIsDirty] = useState(false);
+    const isInitialLoad = useRef(true);
+    const justSaved = useRef(false);
     const [previewFormState, setPreviewFormState] = useState<Record<string, any>>({});
     const [showPublish, setShowPublish] = useState(false);
     const [showAppSettings, setShowAppSettings] = useState(false);
@@ -124,6 +134,7 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
 
     const { selectedProjectId } = useAuthStore();
     const { currentWorkspace } = useWorkspaceStore();
+    const { settings: ps } = useProjectSettingsStore();
 
     const workspaceSlug = React.useMemo(() => {
         const name = currentWorkspace?.name || selectedProjectId || 'workspace';
@@ -190,12 +201,21 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                 components,
                 updatedAt: serverTimestamp()
             }, { merge: true });
+            setIsDirty(false);
+            justSaved.current = true;
+            setTimeout(() => { justSaved.current = false; }, 500);
             showToast('Application saved to cloud');
         } catch (e) {
             console.error(e);
             showToast('Save failed');
         }
     };
+
+    // Track unsaved changes when components mutate
+    useEffect(() => {
+        if (isInitialLoad.current || justSaved.current) return;
+        if (currentAppId) setIsDirty(true);
+    }, [components]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (!selectedProjectId || !currentAppId) {
@@ -207,8 +227,18 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         const unsub = onSnapshot(doc(db, 'workspaces', selectedProjectId, 'apps', currentAppId), (doc) => {
             if (doc.exists()) {
                 const data = doc.data();
+                isInitialLoad.current = true;
+                if (justSaved.current) {
+                    justSaved.current = false;
+                    isInitialLoad.current = false;
+                    setComponents(data.components || []);
+                    isInitialLoad.current = false;
+                    return;
+                }
                 setComponents(data.components || []);
                 setCurrentAppData(data);
+                // Defer clearing the flag so the dirty useEffect sees it
+                setTimeout(() => { isInitialLoad.current = false; }, 0);
             }
         }, (error) => {
             handleFirestoreError(error, OperationType.GET, `workspaces/${selectedProjectId}/apps/${currentAppId}`);
@@ -242,9 +272,6 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
             if ((e.metaKey || e.ctrlKey) && e.key === 's') {
                 e.preventDefault();
                 handleSave();
-            }
-            if (e.key === '?' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
-                setShowShortcuts(s => !s);
             }
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (selectedId && (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA')) {
@@ -341,21 +368,36 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         setPublishStatus('deploying');
         if (selectedProjectId && currentAppId) {
             try {
+                // Always save latest components first so publishedComponents matches current state
+                await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', currentAppId), {
+                    id: currentAppId,
+                    projectId: selectedProjectId,
+                    components,
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
                 // Save the workspace slug so URL lookups work
                 await setDoc(doc(db, 'workspaces', selectedProjectId), { slug: workspaceSlug }, { merge: true });
-                // Publish the app
+                // Publish the app — snapshot components at this moment
                 await setDoc(doc(db, 'workspaces', selectedProjectId, 'apps', currentAppId), {
                     published: true,
                     publishedUrl: `/${workspaceSlug}/${currentAppId}`,
                     workspaceSlug,
                     publishedAt: serverTimestamp(),
-                    // Snapshot of components at publish time — live edits don't affect published version
                     publishedComponents: JSON.parse(JSON.stringify(components)),
                     updatedAt: serverTimestamp()
                 }, { merge: true });
-            } catch(e) { console.error('Publish error', e); }
+                setIsDirty(false);
+                setPublishStatus('success');
+            } catch(e) {
+                console.error('Publish error', e);
+                setPublishStatus('idle');
+                setShowPublish(false);
+                showToast('Publish failed — please try again');
+            }
+        } else {
+            setPublishStatus('idle');
+            setShowPublish(false);
         }
-        setTimeout(() => { setPublishStatus('success'); }, 1500);
     };
 
     return (
@@ -366,16 +408,7 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
         >
             <div className="flex-1 flex overflow-hidden">
                 {/* Left Palette */}
-                <aside className="w-64 border-r flex flex-col shrink-0 transition-colors duration-300" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
-                    <div className="p-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                        <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Components</h3>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                        <PaletteSection title="Layout" items={COMPONENT_TYPES.LAYOUT} />
-                        <PaletteSection title="Inputs" items={COMPONENT_TYPES.INPUTS} />
-                        <PaletteSection title="Display" items={COMPONENT_TYPES.DISPLAY} />
-                    </div>
-                </aside>
+                <LeftPalette />
 
                 {/* Canvas Area */}
                 <div className="flex-1 flex flex-col overflow-hidden transition-colors duration-300" style={{ background: 'var(--bg-primary)' }}>
@@ -383,7 +416,7 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                     <div className="h-12 border-b flex items-center px-4 justify-between shrink-0 transition-colors duration-300" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center gap-4">
                             <button 
-                                onClick={() => setCurrentAppId(null)}
+                                onClick={() => isDirty ? setShowUnsavedWarning(true) : setCurrentAppId(null)}
                                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-all"
                                 title="Back to Applications list"
                             >
@@ -427,14 +460,24 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                                 onClick={() => setShowAppSettings(true)}
                                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-md transition-all group"
                             >
-                                <Settings2 className="w-4 h-4 group-hover:rotate-90 transition-transform" /> Settings
+                                <Settings2 className="w-4 h-4 group-hover:rotate-90 transition-transform" /> App Settings
                             </button>
                              <button 
                                 onClick={handleSave}
                                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-md transition-colors"
                             >
-                                <Layout className="w-4 h-4" /> Save
+                                <Cloud className="w-4 h-4" /> Save
                             </button>
+                            {/* I-02: Persistent save-state indicator */}
+                            {isDirty ? (
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-amber-500 select-none" title="You have unsaved changes">
+                                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> Unsaved changes
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-neutral-400 select-none">
+                                <Cloud className="w-3 h-3" /> Saved
+                              </span>
+                            )}
                             <button 
                                 onClick={() => setShowPreview(true)}
                                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-neutral-600 dark:text-slate-400 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-md transition-colors"
@@ -443,7 +486,8 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                             </button>
                             <button 
                                 onClick={handlePublish}
-                                className="flex items-center gap-2 px-4 py-1.5 text-xs font-semibold bg-primary-600 text-white rounded-md hover:bg-opacity-90 shadow-sm transition-all"
+                                className="flex items-center gap-2 px-4 py-1.5 text-xs font-bold text-white rounded-xl active:scale-95 hover:opacity-90 transition-all"
+                                style={{ background: 'var(--color-primary)', boxShadow: '0 4px 14px 0 var(--color-primary-light)' }}
                             >
                                 <Zap className="w-4 h-4" /> Publish
                             </button>
@@ -480,36 +524,35 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                 </aside>
             </div>
 
-            {/* Keyboard Shortcuts Modal */}
-            {showShortcuts && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-neutral-200 dark:border-slate-700" onClick={e => e.stopPropagation()}>
-                        <div className="px-5 py-4 border-b border-neutral-200 dark:border-slate-800 flex items-center justify-between">
-                            <h3 className="font-bold text-sm text-neutral-900 dark:text-white">Keyboard Shortcuts</h3>
-                            <button onClick={() => setShowShortcuts(false)} className="p-1.5 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-full transition-colors">
-                                <X className="w-4 h-4 text-neutral-400" />
-                            </button>
-                        </div>
-                        <div className="p-5 space-y-2">
-                            {[
-                                ['Ctrl + Z', 'Undo'],
-                                ['Ctrl + Shift + Z', 'Redo'],
-                                ['Ctrl + S', 'Save to cloud'],
-                                ['Delete / Backspace', 'Delete selected component'],
-                                ['Escape', 'Clear selection'],
-                                ['Ctrl + Click', 'Add to multi-select'],
-                                ['Drag on empty canvas', 'Rubber-band select'],
-                                ['Right-click selection', 'Align / Delete menu'],
-                                ['?', 'Toggle this shortcut guide'],
-                            ].map(([key, action]) => (
-                                <div key={key} className="flex items-center justify-between gap-4 py-1.5 border-b border-neutral-50 dark:border-slate-800/50 last:border-0">
-                                    <span className="text-xs text-neutral-500 dark:text-slate-400 font-medium">{action}</span>
-                                    <kbd className="px-2 py-0.5 bg-neutral-100 dark:bg-slate-800 text-neutral-700 dark:text-slate-300 text-[10px] font-mono font-bold rounded-md border border-neutral-200 dark:border-slate-700 whitespace-nowrap">{key}</kbd>
+            {/* Unsaved Changes Warning Modal */}
+            {showUnsavedWarning && (
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-neutral-200 dark:border-slate-700">
+                        <div className="px-6 pt-6 pb-5 space-y-4">
+                            <div className="flex items-start gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                                    <AlertTriangle className="w-5 h-5 text-amber-500" />
                                 </div>
-                            ))}
-                        </div>
-                        <div className="px-5 py-3 bg-neutral-50 dark:bg-slate-800/50 border-t border-neutral-200 dark:border-slate-800 text-center">
-                            <p className="text-[10px] text-neutral-400 font-medium">Press <kbd className="px-1.5 py-0.5 bg-neutral-200 dark:bg-slate-700 rounded text-[9px] font-mono">?</kbd> to open / close</p>
+                                <div>
+                                    <h3 className="font-bold text-neutral-900 dark:text-white text-sm mb-1">Unsaved changes</h3>
+                                    <p className="text-xs text-neutral-500 dark:text-slate-400">You have unsaved changes. Save before leaving?</p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                                <button onClick={async () => { await handleSave(); setShowUnsavedWarning(false); setCurrentAppId(null); }}
+                                    className="flex-1 px-3 py-2 text-xs font-bold text-white rounded-lg transition-colors"
+                                    style={{ background: 'var(--color-primary)' }}>
+                                    Save &amp; Leave
+                                </button>
+                                <button onClick={() => { setIsDirty(false); setShowUnsavedWarning(false); setCurrentAppId(null); }}
+                                    className="flex-1 px-3 py-2 text-xs font-bold text-neutral-600 dark:text-slate-300 bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 rounded-lg transition-colors">
+                                    Discard
+                                </button>
+                                <button onClick={() => setShowUnsavedWarning(false)}
+                                    className="px-3 py-2 text-xs font-bold text-neutral-500 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -546,6 +589,9 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-primary-50 text-primary-600 border border-primary-200">
                                     {currentAppData?.mode?.replace('_',' ') || 'view only'}
                                 </span>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-neutral-100 dark:bg-slate-800 text-neutral-500 dark:text-slate-400 border border-neutral-200 dark:border-slate-700">
+                                    {viewMode === 'desktop' ? '🖥 Desktop' : viewMode === 'tablet' ? '📱 Tablet 768px' : viewMode === 'mobile' ? '📱 Mobile 375px' : `Custom ${customWidth}px`}
+                                </span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <button onClick={() => setPreviewFormState({})} title="Reset form fields"
@@ -560,10 +606,25 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
                         </div>
                         <div className="flex-1 overflow-auto p-8 transition-colors duration-300" style={{ background: '#E5E7EB' }}>
                              <div className="shadow-xl min-h-full max-w-6xl mx-auto rounded-lg border overflow-hidden" style={{ background: currentAppData?.bgColor || '#FFFFFF', borderColor: 'var(--border-color)', minHeight: 800 }}>
-                                 {currentAppData?.headerText && (
-                                     <div className="w-full px-6 py-3 flex items-center shrink-0"
-                                          style={{ background: currentAppData?.headerColor || 'var(--color-primary)' }}>
-                                         <span className="font-bold text-white text-sm">{currentAppData.headerText}</span>
+                                 {ps.enableApplicationHeadings && (
+                                     <div className="w-full px-4 flex items-center shrink-0 relative"
+                                          style={{ background: currentAppData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)', height: ps.headingHeight || 48, fontFamily: ps.headingFontFamily }}>
+                                         {ps.menuEnabled && (ps.menuType === 'burger-left' || ps.menuType === 'slide-left') && (
+                                             <button className="mr-3 p-1.5 rounded-md hover:bg-white/20 transition-colors text-white shrink-0">
+                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                     <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+                                                 </svg>
+                                             </button>
+                                         )}
+                                         {ps.headingLogoUrl && <img src={ps.headingLogoUrl} alt="Logo" className="h-7 w-auto object-contain shrink-0 mr-3" />}
+                                         <span className="font-bold text-white text-sm flex-1 truncate">{currentAppData?.headerText || ps.headingText || ''}</span>
+                                         {ps.menuEnabled && ps.menuType === 'burger-right' && (
+                                             <button className="ml-3 p-1.5 rounded-md hover:bg-white/20 transition-colors text-white shrink-0">
+                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                                     <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+                                                 </svg>
+                                             </button>
+                                         )}
                                      </div>
                                  )}
                                  {components.length === 0 ? (
@@ -1056,10 +1117,90 @@ function ChildComponentsRenderer({
     );
 }
 
+function LeftPalette() {
+    const [collapsed, setCollapsed] = React.useState(() => {
+        try { return localStorage.getItem('nexus-palette-collapsed') === 'true'; } catch { return false; }
+    });
+    const [search, setSearch] = React.useState('');
+
+    const toggle = () => {
+        const next = !collapsed;
+        setCollapsed(next);
+        try { localStorage.setItem('nexus-palette-collapsed', String(next)); } catch {}
+    };
+
+    const allItems = [
+        ...COMPONENT_TYPES.LAYOUT.map((i: any) => ({ ...i, category: 'Layout' })),
+        ...COMPONENT_TYPES.INPUTS.map((i: any) => ({ ...i, category: 'Inputs' })),
+        ...COMPONENT_TYPES.DISPLAY.map((i: any) => ({ ...i, category: 'Display' })),
+    ];
+
+    const filtered = search.trim()
+        ? allItems.filter((i: any) => i.label.toLowerCase().includes(search.toLowerCase()))
+        : null;
+
+    return (
+        <aside className={cn('border-r flex flex-col shrink-0 transition-all duration-200', collapsed ? 'w-12' : 'w-64')} style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}>
+            {collapsed ? (
+                <div className="flex flex-col items-center h-full py-4 gap-3">
+                    <button onClick={toggle} title="Expand Components panel"
+                        className="p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-slate-800 transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                        <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <span className="text-[9px] font-black uppercase tracking-widest select-none" style={{ writingMode: 'vertical-rl', color: 'var(--text-secondary)' }}>Components</span>
+                </div>
+            ) : (
+                <>
+                    <div className="p-4 border-b space-y-2" style={{ borderColor: 'var(--border-color)' }}>
+                        <h3 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Components</h3>
+                        <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                placeholder="Search components…"
+                                className="w-full pl-8 pr-3 py-1.5 text-[11px] rounded-lg border outline-none transition-all"
+                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                        {filtered ? (
+                            filtered.length > 0 ? (
+                                <section>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {filtered.map((item: any) => <PaletteItem key={item.type} {...item} />)}
+                                    </div>
+                                </section>
+                            ) : (
+                                <p className="text-[10px] text-neutral-400 text-center py-6">No components match "{search}"</p>
+                            )
+                        ) : (
+                            <>
+                                <PaletteSection title="Layout" items={COMPONENT_TYPES.LAYOUT} />
+                                <PaletteSection title="Inputs" items={COMPONENT_TYPES.INPUTS} />
+                                <PaletteSection title="Display" items={COMPONENT_TYPES.DISPLAY} />
+                            </>
+                        )}
+                    </div>
+                    <div className="p-2 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <button onClick={toggle} title="Collapse Components panel"
+                            className="w-full flex items-center justify-center gap-2 py-1.5 text-[10px] font-bold rounded-lg hover:bg-neutral-100 dark:hover:bg-slate-800 transition-colors"
+                            style={{ color: 'var(--text-secondary)' }}>
+                            <ChevronLeft className="w-3.5 h-3.5" /> Collapse
+                        </button>
+                    </div>
+                </>
+            )}
+        </aside>
+    );
+}
+
 function PaletteSection({ title, items }: { title: string, items: any[] }) {
     return (
         <section>
-            <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-3">{title}</h4>
+            <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1">{title}</h4>
             <div className="grid grid-cols-2 gap-2">
                  {items.map(item => <PaletteItem key={item.type} {...item} />)}
             </div>
@@ -1079,10 +1220,11 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
             {...listeners}
             {...attributes}
             className={cn(
-                "flex flex-col items-center gap-2 p-3 bg-neutral-50 dark:bg-slate-800 border border-neutral-100 dark:border-slate-700 rounded-xl hover:border-primary-600 dark:hover:border-primary-500 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all group",
+                "flex flex-col items-center gap-2 p-3 bg-neutral-50 dark:bg-slate-800 border border-neutral-100 dark:border-slate-700 rounded-xl hover:border-primary-600 dark:hover:border-primary-500 hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all group relative",
                 isDragging && "opacity-0"
             )}
         >
+            <GripVertical className="w-3 h-3 text-neutral-300 absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-neutral-400 dark:text-slate-500 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                 {icon}
             </div>
@@ -1092,8 +1234,10 @@ function PaletteItem({ type, label, icon }: { type: string, label: string, icon:
 }
 
 function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: string, appData?: any, customWidth?: number, onCanvasRef?: (el: HTMLDivElement | null) => void }) {
-    const { components, selectedId, selectedIds, selectComponent, toggleSelectComponent, clearSelection, moveComponent, updateComponentSize, deleteSelected, alignSelected } = useBuilderStore();
+    const { components, selectedId, selectedIds, selectComponent, toggleSelectComponent, clearSelection, moveComponent, updateComponentSize, deleteSelected, deleteComponent, alignSelected, bringToFront, sendToBack } = useBuilderStore();
+    const { settings: ps } = useProjectSettingsStore();
     const [contextMenu, setContextMenu] = useState<{x:number; y:number} | null>(null);
+    const [menuOpen, setMenuOpen] = useState(false);
     const canvasInnerRef = React.useRef<HTMLDivElement>(null);
     const { isOver, setNodeRef } = useDroppable({ id: 'canvas-dropzone' });
     const setRefs = (el: HTMLDivElement | null) => {
@@ -1207,7 +1351,7 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
 
     return (
         <div 
-            ref={setNodeRef}
+            ref={setRefs}
             className={cn(
                 "shadow-2xl transition-all duration-300 border relative",
                 viewMode === 'desktop' && "w-full",
@@ -1217,9 +1361,10 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
                 isOver ? "border-primary-600" : ""
             )}
             style={{
-                background: isOver ? undefined : (appData?.bgColor || '#FFFFFF'),
+                background: isOver ? undefined : (appData?.bgColor || ps.applicationBackgroundColour || '#FFFFFF'),
                 borderColor: isOver ? undefined : 'var(--border-color)',
                 minHeight: canvasMinHeight,
+                fontFamily: ps.textFontFamily || 'inherit',
                 ...(viewMode === 'custom' ? { width: customWidth } : {}),
             }}
             onClick={(e) => {
@@ -1248,23 +1393,88 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
             }}
         >
             {/* App Header band */}
-            {appData?.headerText && (
+            {ps.enableApplicationHeadings && (
                 <div
-                    className="w-full px-6 py-3 flex items-center shrink-0 select-none"
-                    style={{ background: appData?.headerColor || 'var(--color-primary)' }}
+                    className="w-full px-4 flex items-center shrink-0 select-none relative"
+                    style={{ background: appData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)', height: ps.headingHeight || 48, fontFamily: ps.headingFontFamily }}
                 >
-                    <span className="font-bold text-white text-sm">{appData.headerText}</span>
+                    {/* Burger Left or Slide-left trigger */}
+                    {ps.menuEnabled && (ps.menuType === 'burger-left' || ps.menuType === 'slide-left') && (
+                        <button
+                            onClick={() => setMenuOpen(o => !o)}
+                            className="mr-3 p-1.5 rounded-md hover:bg-white/20 transition-colors text-white shrink-0"
+                            title="Navigation menu"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+                            </svg>
+                        </button>
+                    )}
+
+                    {/* Logo */}
+                    {ps.headingLogoUrl && (
+                        <img src={ps.headingLogoUrl} alt="Logo" className="h-7 w-auto object-contain shrink-0 mr-3" />
+                    )}
+
+                    <span className="font-bold text-white text-sm flex-1 truncate">{appData?.headerText || ps.headingText || ''}</span>
+
+                    {/* Burger Right */}
+                    {ps.menuEnabled && ps.menuType === 'burger-right' && (
+                        <button
+                            onClick={() => setMenuOpen(o => !o)}
+                            className="ml-3 p-1.5 rounded-md hover:bg-white/20 transition-colors text-white shrink-0"
+                            title="Navigation menu"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+                            </svg>
+                        </button>
+                    )}
                 </div>
             )}
 
-            {/* Canvas meta bar */}
-            <div className="absolute -top-10 left-0 text-[10px] font-bold text-neutral-500 dark:text-slate-500 uppercase tracking-widest flex gap-4 items-center">
-                <span className="bg-neutral-200 dark:bg-slate-800 px-2 py-0.5 rounded text-neutral-700 dark:text-slate-300">Free Layout Canvas</span>
-                <span className="text-neutral-300 dark:text-slate-700">•</span>
-                <span>{components.length} Components</span>
-                {selectedId && <span className="text-blue-400">• Drag the <GripHorizontal className="w-3 h-3 inline" /> handle to reposition</span>}
-                <span className="text-neutral-300 dark:text-slate-700">• Press <kbd className="bg-neutral-200 dark:bg-slate-700 px-1 rounded text-[9px] font-mono">?</kbd> for shortcuts</span>
-            </div>
+            {/* Navigation menu overlay */}
+            {ps.menuEnabled && menuOpen && (
+                <>
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 z-40 bg-black/30 backdrop-blur-[1px]"
+                        onClick={() => setMenuOpen(false)}
+                    />
+                    {/* Panel — slide left for slide-left, or dropdown for burger */}
+                    <div className={cn(
+                        "absolute z-50 top-0 flex flex-col shadow-2xl overflow-hidden",
+                        ps.menuType === 'slide-left' || ps.menuType === 'burger-left'
+                            ? "left-0 h-full w-56 rounded-r-2xl"
+                            : "right-0 h-full w-56 rounded-l-2xl"
+                    )} style={{ background: ps.menuColour || appData?.headerColor || ps.headingBackgroundColour || 'var(--color-primary)' }}>
+                        <div className="px-4 py-4 border-b border-white/20 flex items-center justify-between">
+                            <span className="text-white font-bold text-sm">Menu</span>
+                            <button onClick={() => setMenuOpen(false)} className="p-1 rounded-md hover:bg-white/20 text-white">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <nav className="flex-1 overflow-y-auto py-2">
+                            {ps.menuAppIds.length === 0 ? (
+                                <p className="text-white/60 text-xs px-4 py-3 italic">No apps added to menu yet.<br/>Configure in Settings → Appearance.</p>
+                            ) : (
+                                ps.menuAppIds.map((appId, idx) => {
+                                    const menuApp = { id: appId, name: appId }; // name resolved from context when live
+                                    return (
+                                        <button key={appId}
+                                            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-white/15 transition-colors text-white text-sm font-medium"
+                                        >
+                                            <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px] font-black shrink-0">{idx + 1}</span>
+                                            <span className="truncate">{menuApp.name}</span>
+                                        </button>
+                                    );
+                                })
+                            )}
+                        </nav>
+                    </div>
+                </>
+            )}
+
 
             <div className="p-8 nexus-canvas-inner">
             {components.filter(c => !c.parentId).length === 0 && components.length === 0 ? (
@@ -1292,12 +1502,13 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
                                              input: { label: 'Input Field', placeholder: 'Enter value…' },
                                              button: { label: 'Click Me', style: 'primary', actionType: 'submit' },
                                          };
+                                         const n = useBuilderStore.getState().components.length;
                                          const newComp = {
                                              id: `${type}_${Math.random().toString(36).substr(2,9)}`,
                                              type,
                                              label,
                                              properties: defProps[type] || {},
-                                             position: { x: 80, y: 60 },
+                                             position: { x: 80 + (n * 20), y: 60 + (n * 100) },
                                              size: { width: type === 'table' ? 500 : 280, height: type === 'table' ? 300 : 80 }
                                          };
                                          useBuilderStore.getState().addComponent(newComp as any);
@@ -1342,10 +1553,11 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
                                 selectedIds.has(c.id) ? "ring-2 ring-primary-600 ring-offset-4 shadow-xl" : "hover:ring-2 hover:ring-neutral-200 hover:ring-offset-4"
                             )}
                         >
-                            {/* Dedicated drag handle — always visible when hovered/selected */}
+                            {/* Dedicated drag handle — hidden for locked components */}
                             <div
-                                title="Drag to reposition"
+                                title={c.properties?.locked ? "Component is locked — unlock in Properties to move" : "Drag to reposition"}
                                 onMouseDown={(e) => {
+                                    if (c.properties?.locked) return;
                                     e.stopPropagation();
                                     if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !selectedIds.has(c.id)) selectComponent(c.id);
                                     ptr.current = { ...ptr.current, mode: 'drag', id: c.id,
@@ -1361,6 +1573,25 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
                             >
                                 <GripHorizontal className="w-3 h-3 text-white" />
                             </div>
+
+                            {/* Lock indicator */}
+                            {c.properties?.locked && (
+                                <div className="absolute top-1 right-1 w-5 h-5 bg-amber-400 rounded-full flex items-center justify-center z-20 shadow-sm" title="Locked">
+                                    <span className="text-[9px]">🔒</span>
+                                </div>
+                            )}
+
+                            {/* Delete badge — visible on hover or selection, matches ReportDesigner pattern */}
+                            {!c.properties?.locked && (
+                                <button
+                                    title="Delete component"
+                                    aria-label="Delete component"
+                                    onClick={(e) => { e.stopPropagation(); deleteComponent(c.id); }}
+                                    className="absolute -top-3 -right-3 w-6 h-6 bg-rose-600 hover:bg-rose-700 rounded-full flex items-center justify-center z-30 shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                                >
+                                    <Trash2 className="w-3 h-3 text-white" />
+                                </button>
+                            )}
 
                             <RenderComponent component={c} />
                             
@@ -1381,7 +1612,7 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
                                         initW: c.size?.width || 200, initH: c.size?.height || 80,
                                         initX: 0, initY: 0 };
                                   }}
-                                  className="absolute -bottom-1 -right-1 w-4 h-4 bg-white border-2 border-primary-600 rounded-full cursor-nwse-resize z-10 hover:scale-125 transition-transform shadow-sm flex items-center justify-center"
+                                  className="absolute -bottom-1 -right-1 w-4 h-4 bg-white border-2 border-primary-600 rounded-full cursor-nwse-resize z-10 hover:scale-125 transition-all duration-150 shadow-sm flex items-center justify-center opacity-0 animate-in fade-in"
                                   title="Drag to resize"
                                 ></div>
                             )}
@@ -1438,6 +1669,21 @@ function Canvas({ viewMode, appData, customWidth, onCanvasRef }: { viewMode: str
                             <div className="border-t border-neutral-100 dark:border-slate-800 my-1"/>
                         </>
                     )}
+                    {selectedIds.size === 1 && selectedId && (
+                        <>
+                            <button onClick={() => { bringToFront(selectedId); setContextMenu(null); }}
+                                className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-neutral-700 dark:text-slate-300 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors text-left">
+                                <span className="w-4 h-4 flex items-center justify-center text-neutral-400">↑</span>
+                                Bring to Front
+                            </button>
+                            <button onClick={() => { sendToBack(selectedId); setContextMenu(null); }}
+                                className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-neutral-700 dark:text-slate-300 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors text-left">
+                                <span className="w-4 h-4 flex items-center justify-center text-neutral-400">↓</span>
+                                Send to Back
+                            </button>
+                            <div className="border-t border-neutral-100 dark:border-slate-800 my-1"/>
+                        </>
+                    )}
                     <button onClick={() => { deleteSelected(); setContextMenu(null); }}
                         className="w-full flex items-center gap-3 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors text-left">
                         <span className="w-4 h-4 flex items-center justify-center">✕</span>
@@ -1465,19 +1711,20 @@ function RenderComponent({
 }) {
     const { type, properties, size } = component;
     const { selectedProjectId } = useAuthStore();
+    const { settings: ps } = useProjectSettingsStore();
 
     switch (type) {
         case 'heading':
             const HeadingTag = (properties.size || 'h1') as any;
             return <HeadingTag className={cn(
-                "font-bold text-neutral-900 dark:text-white tracking-tight leading-tight",
+                "font-bold tracking-tight leading-tight",
                 properties.size === 'h1' && "text-4xl",
                 properties.size === 'h2' && "text-3xl",
                 properties.size === 'h3' && "text-2xl",
-            )}>{properties.text || 'Heading'}</HeadingTag>;
+            )} style={{ color: ps.textColour || '#111827' }}>{properties.text || 'Heading'}</HeadingTag>;
         
         case 'text':
-            return <p className="text-neutral-600 dark:text-neutral-400 leading-relaxed text-sm">{properties.text || 'Paragraph text content...'}</p>;
+            return <p className="leading-relaxed text-sm" style={{ color: ps.textColour || '#4B5563' }}>{properties.text || 'Paragraph text content...'}</p>;
 
         case 'button':
             const handleClick = async () => {
@@ -1575,14 +1822,30 @@ function RenderComponent({
                         color: properties.customText || '#ffffff',
                         '--btn-hover-bg': properties.customHoverBg || properties.customBg || '#1e293b',
                         '--btn-active-bg': properties.customActiveBg || properties.customBg || '#0f172a',
+                    } as any : properties.style === 'primary' ? {
+                        width: '100%', height: '100%',
+                        background: 'var(--project-btn-standard, var(--color-primary))',
+                        color: '#ffffff',
                     } as any : { width: '100%', height: '100%' }}
-                    onMouseEnter={(e) => { if (properties.style === 'custom' && properties.customHoverBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg; }}
-                    onMouseLeave={(e) => { if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155'; }}
-                    onMouseDown={(e) => { if (properties.style === 'custom' && properties.customActiveBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customActiveBg; }}
-                    onMouseUp={(e) => { if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155'; }}
+                    onMouseEnter={(e) => { 
+                        if (properties.style === 'custom' && properties.customHoverBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customHoverBg;
+                        if (properties.style === 'primary') (e.currentTarget as HTMLElement).style.background = 'var(--project-btn-hover, var(--color-primary))';
+                    }}
+                    onMouseLeave={(e) => { 
+                        if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155';
+                        if (properties.style === 'primary') (e.currentTarget as HTMLElement).style.background = 'var(--project-btn-standard, var(--color-primary))';
+                    }}
+                    onMouseDown={(e) => { 
+                        if (properties.style === 'custom' && properties.customActiveBg) (e.currentTarget as HTMLElement).style.backgroundColor = properties.customActiveBg;
+                        if (properties.style === 'primary') (e.currentTarget as HTMLElement).style.background = 'var(--project-btn-clicked, var(--color-primary))';
+                    }}
+                    onMouseUp={(e) => { 
+                        if (properties.style === 'custom') (e.currentTarget as HTMLElement).style.backgroundColor = properties.customBg || '#334155';
+                        if (properties.style === 'primary') (e.currentTarget as HTMLElement).style.background = 'var(--project-btn-hover, var(--color-primary))';
+                    }}
                     className={cn(
                         "rounded-xl font-bold transition-all shadow-md active:scale-95",
-                        properties.style === 'primary' ? "bg-primary-600 text-white hover:bg-primary-700 shadow-primary-200" :
+                        properties.style === 'primary' ? "text-white" :
                         properties.style === 'secondary' ? "bg-white border-2 border-neutral-200 text-neutral-700 hover:bg-neutral-50 shadow-neutral-100 dark:bg-[#1A1A1A] dark:border-neutral-800 dark:text-neutral-300" :
                         properties.style === 'custom' ? "" :
                         "bg-error-600 text-white hover:bg-error-700 shadow-error-200"
@@ -1605,7 +1868,7 @@ function RenderComponent({
             
             return (
                 <div className="space-y-1.5 w-full h-full">
-                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300">{properties.label || 'Toggle'}</label>
+                    <label className="text-sm font-bold" style={{ color: ps.textColour || '#374151' }}>{properties.label || 'Toggle'}</label>
                     <div className="flex bg-neutral-100 dark:bg-[#1E293B] p-1 rounded-xl w-full">
                         {toggleOptions.map((opt: string, idx: number) => (
                             <button
@@ -1631,7 +1894,7 @@ function RenderComponent({
         case 'date':
             return (
                 <div className="space-y-1.5 w-full h-full flex flex-col">
-                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 flex items-center gap-1">
+                    <label className="text-sm font-bold flex items-center gap-1" style={{ color: ps.textColour || '#374151' }}>
                         <Calendar className="w-3.5 h-3.5 opacity-60" />
                         {properties.label || 'Date'}
                         {properties.required && <span className="text-error-500">*</span>}
@@ -1691,12 +1954,13 @@ function RenderComponent({
             const selectOptions = properties.options || [{ value: '1', label: 'Option 1' }];
             return (
                 <div className="space-y-1.5 w-full h-full flex flex-col">
-                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300">{properties.label || 'Dropdown'}</label>
+                    <label className="text-sm font-bold" style={{ color: ps.textColour || '#374151' }}>{properties.label || 'Dropdown'}</label>
                     <div className="relative flex-1">
                         <select 
                             value={formState ? (formState[properties.fieldMapping || component.id] ?? '') : ''}
                             onChange={(e) => { if (preview) onFormUpdate?.(properties.fieldMapping || component.id, e.target.value); }}
-                            className="w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none appearance-none dark:text-white"
+                            className="w-full h-full px-4 border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none appearance-none dark:text-white"
+                            style={{ backgroundColor: ps.componentPrimaryColour ? `${ps.componentPrimaryColour}18` : '#F9FAFB' }}
                             disabled={!preview}
                         >
                             <option value="">Select option...</option>
@@ -1712,7 +1976,7 @@ function RenderComponent({
         case 'input':
             return (
                 <div className="space-y-1.5 w-full h-full flex flex-col">
-                    <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 flex items-center justify-between gap-1">
+                    <label className="text-sm font-bold flex items-center justify-between gap-1" style={{ color: ps.textColour || '#374151' }}>
                         <div className="flex items-center gap-1">
                             {properties.label || 'Input Label'}
                             {properties.required && <span className="text-error-500">*</span>}
@@ -1728,11 +1992,12 @@ function RenderComponent({
                         placeholder={properties.readOnly ? '' : (properties.placeholder || 'Enter value...')}
                         readOnly={!!properties.readOnly}
                         className={cn(
-                            "w-full h-full px-4 bg-neutral-50 dark:bg-[#1A1A1A] border rounded-xl text-sm outline-none transition-all dark:text-white",
+                            "w-full h-full px-4 border rounded-xl text-sm outline-none transition-all dark:text-white",
                             properties.readOnly
-                                ? "border-neutral-100 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 cursor-default select-none bg-neutral-50/60 dark:bg-neutral-900/40"
+                                ? "border-neutral-100 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 cursor-default select-none"
                                 : "border-neutral-200 dark:border-neutral-800 focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600"
                         )}
+                        style={{ backgroundColor: ps.componentPrimaryColour ? `${ps.componentPrimaryColour}18` : undefined }}
                         disabled={!preview}
                     />
                 </div>
@@ -1947,6 +2212,7 @@ function RenderComponent({
 function DataTableComponent({ component, properties, appContext, preview }: { component: any; properties: any; appContext?: any; preview?: boolean }) {
     const { tables } = useSchemaStore();
     const { selectedProjectId } = useAuthStore();
+    const { settings: ps } = useProjectSettingsStore();
     const [rows, setRows] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [filterValues, setFilterValues] = useState<Record<string, string>>({});
@@ -2041,11 +2307,11 @@ function DataTableComponent({ component, properties, appContext, preview }: { co
                     </div>
                 ) : (
                     <table className="w-full text-[11px]">
-                        <thead className="sticky top-0" style={{ background: 'var(--bg-primary)' }}>
+                        <thead className="sticky top-0" style={{ background: ps.componentPrimaryColour || 'var(--bg-primary)' }}>
                             <tr>
                                 {startBtns.length > 0 && <th className="px-3 py-2 w-px" />}
                                 {visibleFields.map((f: any) => (
-                                    <th key={f.id} className="px-4 py-2 text-left font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: 'var(--text-secondary)' }}>{f.name}</th>
+                                    <th key={f.id} className="px-4 py-2 text-left font-bold uppercase tracking-wider whitespace-nowrap text-white opacity-90">{f.name}</th>
                                 ))}
                                 {endBtns.length > 0 && <th className="px-3 py-2 w-px" />}
                             </tr>
@@ -2149,7 +2415,7 @@ function DataTableComponent({ component, properties, appContext, preview }: { co
 }
 
 function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: { dataSourceId?: string, unifiedDatasources: any[]; currentAppData?: any }) {
-    const { selectedId, components, updateComponent, deleteComponent, currentAppId } = useBuilderStore();
+    const { selectedId, components, updateComponent, deleteComponent, currentAppId, bringToFront, sendToBack } = useBuilderStore();
     const { tables, restApiConnectors } = useSchemaStore();
     const { selectedProjectId } = useAuthStore();
     const [allApps, setAllApps] = useState<any[]>([]);
@@ -2215,26 +2481,56 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
     };
 
     return (
-        <div className="flex-1 flex flex-col">
-            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-surface)' }}>
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-primary-100 text-primary-600 flex items-center justify-center">
-                        {COMPONENT_TYPES.LAYOUT.find(t => t.type === type)?.icon || 
-                         COMPONENT_TYPES.INPUTS.find(t => t.type === type)?.icon ||
-                         COMPONENT_TYPES.DISPLAY.find(t => t.type === type)?.icon || 
-                         <Square className="w-4 h-4" />}
+        <div className="flex-1 min-h-0 flex flex-col">
+            <div className="p-3 border-b" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-surface)' }}>
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-primary-100 text-primary-600 flex items-center justify-center">
+                            {COMPONENT_TYPES.LAYOUT.find(t => t.type === type)?.icon || 
+                             COMPONENT_TYPES.INPUTS.find(t => t.type === type)?.icon ||
+                             COMPONENT_TYPES.DISPLAY.find(t => t.type === type)?.icon || 
+                             <Square className="w-3.5 h-3.5" />}
+                        </div>
+                        <h3 className="font-bold text-neutral-900 text-xs" title={`ID: ${selectedId}`}>{label}</h3>
                     </div>
-                    <div>
-                        <h3 className="font-bold text-neutral-900 text-xs">{label}</h3>
-                        <p className="text-[10px] text-neutral-400 font-mono">ID: {selectedId}</p>
-                    </div>
+                    <button 
+                        onClick={() => deleteComponent(selectedId!)}
+                        className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
+                        title="Delete component"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                 </div>
-                <button 
-                    onClick={() => deleteComponent(selectedId!)}
-                    className="p-1.5 text-neutral-400 hover:text-error-600 hover:bg-error-50 rounded-md transition-all"
-                >
-                    <Trash2 className="w-4 h-4" />
-                </button>
+                {/* I-06: Z-order controls  |  I-04: Lock toggle */}
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={() => bringToFront(selectedId!)}
+                        title="Bring to front"
+                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 transition-all"
+                    >
+                        <ChevronsUp className="w-3.5 h-3.5" /> Front
+                    </button>
+                    <button
+                        onClick={() => sendToBack(selectedId!)}
+                        title="Send to back"
+                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 transition-all"
+                    >
+                        <ChevronsDown className="w-3.5 h-3.5" /> Back
+                    </button>
+                    <div className="flex-1" />
+                    <button
+                        onClick={() => updateComponent(selectedId!, { properties: { ...properties, locked: !properties?.locked } })}
+                        title={properties?.locked ? 'Unlock component' : 'Lock component position'}
+                        className={cn(
+                            "flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all",
+                            properties?.locked
+                                ? "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                        )}
+                    >
+                        {properties?.locked ? '🔒 Locked' : '🔓 Lock'}
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -2243,7 +2539,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      <h4 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest border-b border-neutral-100 pb-2">General</h4>
                      
                      <div className="space-y-1.5">
-                        <label className="text-[11px] font-bold text-neutral-700 uppercase">Label</label>
+                        <label className="text-[11px] font-semibold text-neutral-600">Label</label>
                         <input 
                             type="text" 
                             value={properties.label || ''}
@@ -2253,7 +2549,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      </div>
 
                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-neutral-700 uppercase leading-none">Visibility</label>
+                        <label className="text-[11px] font-semibold text-neutral-600">Visibility</label>
                         <button 
                             onClick={() => handleUpdate('visibility', !properties.visibility)}
                             className={cn(
@@ -2312,7 +2608,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      {type === 'heading' && (
                          <>
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Text</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Text</label>
                                  <input 
                                      type="text" 
                                      value={properties.text || ''}
@@ -2321,7 +2617,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  />
                              </div>
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Size</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Size</label>
                                  <select 
                                      value={properties.size || 'h1'}
                                      onChange={(e) => handleUpdate('size', e.target.value)}
@@ -2351,13 +2647,13 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              {btnTab === 'general' && (
                                  <div className="space-y-3">
                                      <div className="space-y-1.5">
-                                         <label className="text-[11px] font-bold text-neutral-700 uppercase">Button Text</label>
+                                         <label className="text-[11px] font-semibold text-neutral-600">Button Text</label>
                                          <input type="text" value={properties.label || ''}
                                              onChange={(e) => handleUpdate('label', e.target.value)}
                                              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none" />
                                      </div>
                                      <div className="flex items-center justify-between">
-                                         <label className="text-[11px] font-bold text-neutral-700 uppercase leading-none">Visible</label>
+                                         <label className="text-[11px] font-semibold text-neutral-600">Visible</label>
                                          <button onClick={() => handleUpdate('visible', properties.visible === false ? true : false)}
                                              className={cn('relative inline-flex h-5 w-9 rounded-full border-2 border-transparent transition-colors', properties.visible !== false ? 'bg-primary-600' : 'bg-neutral-200')}>
                                              <span className={cn('inline-block h-4 w-4 rounded-full bg-white shadow transition-transform', properties.visible !== false ? 'translate-x-4' : 'translate-x-0')} />
@@ -2369,7 +2665,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              {btnTab === 'action' && (
                                  <div className="space-y-3">
                                      <div className="space-y-1.5">
-                                         <label className="text-[11px] font-bold text-neutral-700 uppercase">Action</label>
+                                         <label className="text-[11px] font-semibold text-neutral-600">Action</label>
                                          <select value={properties.actionType || 'submit'}
                                              onChange={(e) => handleUpdate('actionType', e.target.value)}
                                              className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-600/20 focus:border-primary-600 outline-none font-bold">
@@ -2426,7 +2722,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              {btnTab === 'style' && (
                              <div className="space-y-3">
                                  <div className="space-y-1.5">
-                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Style</label>
+                                     <label className="text-[11px] font-semibold text-neutral-600">Style</label>
                                      <select 
                                          value={properties.style || 'primary'}
                                          onChange={(e) => handleUpdate('style', e.target.value)}
@@ -2476,7 +2772,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      {type === 'input' && (
                          <>
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Placeholder</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Placeholder</label>
                                  <input 
                                      type="text" 
                                      value={properties.placeholder || ''}
@@ -2485,7 +2781,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  />
                              </div>
                              <div className="flex items-center justify-between">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Required</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Required</label>
                                  <button 
                                      onClick={() => handleUpdate('required', !properties.required)}
                                      className={cn(
@@ -2501,7 +2797,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              </div>
                              <div className="flex items-center justify-between">
                                  <div>
-                                     <label className="text-[11px] font-bold text-neutral-700 uppercase leading-none">Read Only</label>
+                                     <label className="text-[11px] font-semibold text-neutral-600">Read Only</label>
                                      <p className="text-[9px] text-neutral-400 mt-0.5">Display field value — user cannot edit</p>
                                  </div>
                                  <button 
@@ -2579,10 +2875,10 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                                      <div className="flex gap-1">
                                                          <select value={flt.op} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], op: e.target.value }; handleUpdate('tableFilters', nf); }}
                                                              className="flex-1 px-1 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white">
-                                                             <option value="==">equals</option>
-                                                             <option value="contains">contains</option>
-                                                             <option value=">">greater than</option>
-                                                             <option value="<">less than</option>
+                                                             <option value="==">Equals</option>
+                                                             <option value="contains">Contains</option>
+                                                             <option value=">">Greater than</option>
+                                                             <option value="<">Less than</option>
                                                          </select>
                                                          <input value={flt.value} onChange={(e) => { const nf = [...tableFilters]; nf[fi] = { ...nf[fi], value: e.target.value }; handleUpdate('tableFilters', nf); }}
                                                              placeholder="value" className="flex-1 px-2 py-1 text-xs rounded border border-neutral-200 dark:border-slate-600 bg-white dark:bg-slate-700 outline-none dark:text-white" />
@@ -2652,19 +2948,26 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                          };
                                          return (
                                          <div key={bi} className="p-3 border border-neutral-200 dark:border-slate-700 rounded-xl space-y-2.5 bg-neutral-50 dark:bg-slate-800">
+                                             {/* Line 1: label + delete */}
                                              <div className="flex gap-1 items-center">
                                                  <input placeholder="Label" value={btn.label || ''} onChange={(e) => updateBtn({ label: e.target.value })}
                                                      className="flex-1 px-2 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white font-bold" />
-                                                 <select value={btn.position || 'end'} onChange={(e) => updateBtn({ position: e.target.value })}
-                                                     className="px-1 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white">
-                                                     <option value="start">Start</option>
-                                                     <option value="end">End</option>
-                                                 </select>
-                                                 <input type="color" value={btn.color || '#1A56DB'} onChange={(e) => updateBtn({ color: e.target.value })}
-                                                     className="w-7 h-7 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent shrink-0" />
                                                  <button onClick={() => handleUpdate('rowButtons', (properties.rowButtons || []).filter((_: any, i: number) => i !== bi))} className="text-rose-400 hover:text-rose-600 shrink-0">
                                                      <Minus className="w-3 h-3" />
                                                  </button>
+                                             </div>
+                                             {/* Line 2: position + colour */}
+                                             <div className="flex gap-2 items-center">
+                                                 <select value={btn.position || 'end'} onChange={(e) => updateBtn({ position: e.target.value })}
+                                                     className="flex-1 px-1 py-1.5 text-xs border border-neutral-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 outline-none dark:text-white">
+                                                     <option value="start">Start</option>
+                                                     <option value="end">End</option>
+                                                 </select>
+                                                 <div className="flex items-center gap-1.5">
+                                                     <label className="text-[10px] font-semibold text-neutral-500">Colour</label>
+                                                     <input type="color" value={btn.color || '#1A56DB'} onChange={(e) => updateBtn({ color: e.target.value })}
+                                                         className="w-7 h-7 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent shrink-0" />
+                                                 </div>
                                              </div>
                                              <div className="space-y-1">
                                                  <label className="text-[9px] font-black uppercase tracking-widest text-neutral-400">Button Action</label>
@@ -2721,7 +3024,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      {['bar_chart', 'line_chart', 'pie_chart'].includes(type) && (
                          <div className="space-y-3">
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Data Source</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Data Source</label>
                                  <select value={properties.dataSource || ''} onChange={(e) => handleUpdate('dataSource', e.target.value)}
                                      className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm outline-none">
                                      <option value="">Select a datasource...</option>
@@ -2732,7 +3035,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              {type !== 'pie_chart' ? (
                                  <>
                                      <div className="space-y-1.5">
-                                         <label className="text-[11px] font-bold text-neutral-700 uppercase">Chart Colour</label>
+                                         <label className="text-[11px] font-semibold text-neutral-600">Chart Colour</label>
                                          <div className="flex items-center gap-2">
                                              <input type="color" value={properties.chartColor || '#1A56DB'} onChange={(e) => handleUpdate('chartColor', e.target.value)}
                                                  className="w-8 h-8 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent" />
@@ -2743,14 +3046,14 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  </>
                              ) : (
                                  <div className="space-y-1.5">
-                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Pie Colours (comma-separated)</label>
+                                     <label className="text-[11px] font-semibold text-neutral-600">Pie Colours (comma-separated)</label>
                                      <input type="text" value={properties.chartColors || '#1A56DB,#0EA5E9,#34D399,#F59E0B,#EF4444'}
                                          onChange={(e) => handleUpdate('chartColors', e.target.value)}
                                          placeholder="#1A56DB,#0EA5E9,..." className="w-full px-3 py-2 text-xs font-mono bg-neutral-50 border border-neutral-200 rounded-lg outline-none" />
                                  </div>
                              )}
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Chart Background</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Chart Background</label>
                                  <div className="flex items-center gap-2">
                                      <input type="color" value={properties.chartBg || '#ffffff'} onChange={(e) => handleUpdate('chartBg', e.target.value)}
                                          className="w-8 h-8 rounded cursor-pointer border border-neutral-200 p-0.5 bg-transparent" />
@@ -2765,7 +3068,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      {type === 'accordion' && (
                          <div className="space-y-3">
                              <div className="flex items-center justify-between">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Sections</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Sections</label>
                                  <button onClick={() => handleUpdate('sections', [...(properties.sections || []), { title: `Section ${(properties.sections?.length || 0) + 1}`, content: 'Content...' }])}
                                      className="text-[10px] font-bold text-primary-600 hover:underline">+ Add</button>
                              </div>
@@ -2788,7 +3091,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      {type === 'tabs' && (
                          <div className="space-y-3">
                              <div className="flex items-center justify-between">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Tabs</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Tabs</label>
                                  <button onClick={() => handleUpdate('tabs', [...(properties.tabs || []), { label: `Tab ${(properties.tabs?.length || 0) + 1}`, content: 'Content...' }])}
                                      className="text-[10px] font-bold text-primary-600 hover:underline">+ Add</button>
                              </div>
@@ -2812,7 +3115,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                          <div className="space-y-4">
                              {/* Upload */}
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Upload Image</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Upload Image</label>
                                  <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-neutral-200 rounded-xl p-4 cursor-pointer hover:border-primary-400 hover:bg-primary-50/20 transition-all">
                                      <Upload className="w-5 h-5 text-neutral-400" />
                                      <span className="text-xs text-neutral-500 font-medium">
@@ -2834,7 +3137,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              </div>
                              {/* URL fallback */}
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">— or — Image URL</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">— or — Image URL</label>
                                  <input
                                      type="url"
                                      placeholder="https://example.com/image.png"
@@ -2849,7 +3152,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  </div>
                              )}
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Alt Text</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Alt Text</label>
                                  <input
                                      placeholder="Descriptive alt text"
                                      value={properties.alt || ''}
@@ -2858,7 +3161,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  />
                              </div>
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Object Fit</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Object Fit</label>
                                  <select
                                      value={properties.fit || 'cover'}
                                      onChange={(e) => handleUpdate('fit', e.target.value)}
@@ -2886,7 +3189,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              {/* Tags */}
                              <div className="space-y-2">
                                  <div className="flex items-center justify-between">
-                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Tags</label>
+                                     <label className="text-[11px] font-semibold text-neutral-600">Tags</label>
                                      <button
                                          onClick={() => handleUpdate('tags', [...(properties.tags || []), { label: 'New Tag' }])}
                                          className="text-[10px] font-bold text-primary-600 hover:underline"
@@ -2913,7 +3216,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              </div>
                              {/* Style */}
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Variant</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Variant</label>
                                  <div className="flex gap-2">
                                      {['solid', 'soft', 'outline'].map(v => (
                                          <button
@@ -2925,7 +3228,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  </div>
                              </div>
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Size</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Size</label>
                                  <div className="flex gap-2">
                                      {['sm','md','lg'].map(s => (
                                          <button
@@ -2937,7 +3240,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                  </div>
                              </div>
                              <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Badge Colour</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Badge Colour</label>
                                  <div className="flex gap-2 items-center">
                                      <input type="color" value={properties.color || '#1A56DB'} onChange={(e) => handleUpdate('color', e.target.value)} className="w-9 h-9 rounded-lg border border-neutral-200 cursor-pointer p-0.5 bg-transparent" />
                                      <input value={properties.color || '#1A56DB'} onChange={(e) => handleUpdate('color', e.target.value)} className="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-mono outline-none" />
@@ -2945,7 +3248,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                              </div>
                              {properties.variant === 'solid' && (
                                  <div className="space-y-1.5">
-                                     <label className="text-[11px] font-bold text-neutral-700 uppercase">Text Colour</label>
+                                     <label className="text-[11px] font-semibold text-neutral-600">Text Colour</label>
                                      <div className="flex gap-2 items-center">
                                          <input type="color" value={properties.textColor || '#ffffff'} onChange={(e) => handleUpdate('textColor', e.target.value)} className="w-9 h-9 rounded-lg border border-neutral-200 cursor-pointer p-0.5 bg-transparent" />
                                          <input value={properties.textColor || '#ffffff'} onChange={(e) => handleUpdate('textColor', e.target.value)} className="flex-1 px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-mono outline-none" />
@@ -2972,7 +3275,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                      {type === 'toggle' && (
                          <div className="space-y-4">
                               <div className="space-y-1.5">
-                                 <label className="text-[11px] font-bold text-neutral-700 uppercase">Options (comma separated)</label>
+                                 <label className="text-[11px] font-semibold text-neutral-600">Options (comma separated)</label>
                                  <input 
                                      type="text" 
                                      placeholder="Option 1, Option 2, Option 3"
@@ -2987,7 +3290,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
 
                      {type === 'select' && (
                          <div className="space-y-4">
-                              <label className="text-[11px] font-bold text-neutral-700 uppercase">Dropdown Options</label>
+                              <label className="text-[11px] font-semibold text-neutral-600">Dropdown Options</label>
                               <div className="space-y-2">
                                   {(properties.options || []).map((opt: any, idx: number) => (
                                       <div key={idx} className="flex gap-1">

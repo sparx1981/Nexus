@@ -31,6 +31,8 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
     return p;
   });
   const [requireSignIn, setRequireSignIn] = useState<boolean | null>(null);
+  const [projectSettings, setProjectSettings] = useState<any>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast]   = useState<{ msg: string; type: 'success'|'error'|'info' } | null>(null);
   const showToast = (msg: string, type: 'success'|'error'|'info' = 'info') => {
     setToast({ msg, type });
@@ -38,10 +40,12 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
   };
   const [isAuthorised, setIsAuthorised]   = useState<boolean | null>(null);
 
-  // ── 1. Load project settings (requireSignIn) ──────────────────────────────
+  // ── 1. Load project settings ──────────────────────────────────────────────
   useEffect(() => {
     getDoc(doc(db, 'workspaces', workspaceId, 'config', 'projectSettings')).then(snap => {
-      const req = snap.exists() ? (snap.data()?.requireSignIn ?? false) : false;
+      const data = snap.exists() ? snap.data() : {};
+      setProjectSettings(data);
+      const req = data?.requireSignIn ?? false;
       setRequireSignIn(req);
       if (!req) { setIsAuthorised(true); return; }
       // Check if the current user is authenticated and a member of this workspace
@@ -59,7 +63,7 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
           setIsAuthorised(isMember);
         }).catch(() => setIsAuthorised(false));
       });
-    }).catch(() => { setRequireSignIn(false); setIsAuthorised(true); });
+    }).catch(() => { setProjectSettings({}); setRequireSignIn(false); setIsAuthorised(true); });
   }, [workspaceId]);
 
   // ── 2. Load app definition ────────────────────────────────────────────────
@@ -72,7 +76,7 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
       const data = snap.data();
       if (!data.published) { setError('This application has not been published yet.'); setLoading(false); return; }
       // Use publishedComponents (frozen snapshot) — NOT the live components array
-      if (!data.publishedComponents?.length) {
+      if (!data.publishedComponents) {
         setError('No published version available. Please publish the app from the Nexus builder first.');
         setLoading(false);
         return;
@@ -158,9 +162,19 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
   // ── 5. Render the published app ──────────────────────────────────────────
   // Use publishedComponents — the frozen snapshot taken at publish time.
   const components = appData?.publishedComponents || [];
-  const bgColor    = appData?.bgColor || '#f8fafc';
+  const ps = projectSettings || {};
+  const bgColor     = ps.applicationBackgroundColour || appData?.bgColor || '#f8fafc';
   const headerText  = appData?.headerText;
-  const headerColor = appData?.headerColor || '#1A56DB';
+  const headerColor = appData?.headerColor || ps.headingBackgroundColour || '#1A56DB';
+  const headingHeight    = ps.headingHeight    || 48;
+  const headingFontFamily = ps.headingFontFamily || 'system-ui, sans-serif';
+  const headingLogoUrl   = ps.headingLogoUrl   || '';
+  const showHeader = ps.enableApplicationHeadings !== false;
+  const displayHeaderText = appData?.headerText || ps.headingText || '';
+  const menuEnabled  = ps.menuEnabled  || false;
+  const menuType     = ps.menuType     || 'burger-left';
+  const menuAppIds: string[] = ps.menuAppIds || [];
+  const menuBgColor  = ps.menuColour   || headerColor;
 
   const handleFormUpdate = (field: string, value: any) => {
     setFormState(prev => ({ ...prev, [field]: value }));
@@ -200,12 +214,86 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: bgColor }}>
+    <div className="min-h-screen relative" style={{ backgroundColor: bgColor }}>
       {/* App header */}
-      {headerText && (
-        <div className="w-full px-6 py-3 flex items-center" style={{ backgroundColor: headerColor }}>
-          <span className="font-bold text-white text-sm">{headerText}</span>
+      {showHeader && (
+        <div
+          className="w-full px-4 flex items-center shrink-0 relative z-10"
+          style={{ backgroundColor: headerColor, height: headingHeight, fontFamily: headingFontFamily }}
+        >
+          {/* Burger Left / Slide-left trigger */}
+          {menuEnabled && (menuType === 'burger-left' || menuType === 'slide-left') && (
+            <button
+              onClick={() => setMenuOpen(o => !o)}
+              className="mr-3 p-1.5 rounded-md hover:bg-white/20 transition-colors text-white shrink-0"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
+            </button>
+          )}
+          {headingLogoUrl && (
+            <img src={headingLogoUrl} alt="Logo" className="h-7 w-auto object-contain shrink-0 mr-3" />
+          )}
+          <span className="font-bold text-white text-sm flex-1 truncate">{displayHeaderText}</span>
+          {/* Burger Right */}
+          {menuEnabled && menuType === 'burger-right' && (
+            <button
+              onClick={() => setMenuOpen(o => !o)}
+              className="ml-3 p-1.5 rounded-md hover:bg-white/20 transition-colors text-white shrink-0"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
+            </button>
+          )}
         </div>
+      )}
+
+      {/* Navigation menu overlay */}
+      {menuEnabled && menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px]" onClick={() => setMenuOpen(false)} />
+          <div
+            className={cn(
+              "fixed z-50 top-0 flex flex-col shadow-2xl overflow-hidden",
+              menuType === 'slide-left' || menuType === 'burger-left'
+                ? "left-0 h-full w-56 rounded-r-2xl"
+                : "right-0 h-full w-56 rounded-l-2xl"
+            )}
+            style={{ backgroundColor: menuBgColor }}
+          >
+            <div className="px-4 py-4 border-b border-white/20 flex items-center justify-between">
+              <span className="text-white font-bold text-sm">Menu</span>
+              <button onClick={() => setMenuOpen(false)} className="p-1 rounded-md hover:bg-white/20 text-white">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <nav className="flex-1 overflow-y-auto py-2">
+              {menuAppIds.length === 0 ? (
+                <p className="text-white/60 text-xs px-4 py-3 italic">No apps added to menu yet.</p>
+              ) : (
+                menuAppIds.map((aid) => (
+                  <button
+                    key={aid}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      window.location.href = `/${appData.workspaceSlug || workspaceId}/${aid}`;
+                    }}
+                    className={cn(
+                      "w-full text-left px-4 py-3 text-sm font-medium text-white hover:bg-white/15 transition-colors",
+                      aid === appId && "bg-white/20"
+                    )}
+                  >
+                    {aid}
+                  </button>
+                ))
+              )}
+            </nav>
+          </div>
+        </>
       )}
 
       {/* Canvas — padded outer container for comfortable default margins */}
@@ -232,6 +320,7 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
               appData={appData}
               workspaceId={workspaceId}
               urlParams={urlParams}
+              ps={ps}
             />
           </div>
         ))}
@@ -253,7 +342,7 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
 }
 
 // ── Component renderer for published apps ─────────────────────────────────
-function RunnerComponent({ component, allComponents, tableData, formState, onFormUpdate, onButtonClick, appData, workspaceId, urlParams = {} }: any) {
+function RunnerComponent({ component, allComponents, tableData, formState, onFormUpdate, onButtonClick, appData, workspaceId, urlParams = {}, ps = {} }: any) {
   const { type, properties, size, id } = component;
 
   const children = allComponents.filter((c: any) => c.parentId === id);
@@ -272,20 +361,25 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
           appData={appData}
           workspaceId={workspaceId}
           urlParams={urlParams}
+          ps={ps}
         />
       ));
+
+  const textColour = ps.textColour || '#111827';
+  const inputBg = ps.componentPrimaryColour ? `${ps.componentPrimaryColour}18` : '#F9FAFB';
+  const tableHeaderBg = ps.componentPrimaryColour || '#1A56DB';
 
   switch (type) {
     case 'heading': {
       const Tag = (properties.size || 'h1') as any;
-      const cls = cn('font-bold text-neutral-900 tracking-tight',
+      const cls = cn('font-bold tracking-tight',
         properties.size === 'h1' && 'text-4xl',
         properties.size === 'h2' && 'text-3xl',
         properties.size === 'h3' && 'text-2xl');
-      return <Tag className={cls}>{properties.text || 'Heading'}</Tag>;
+      return <Tag className={cls} style={{ color: textColour }}>{properties.text || 'Heading'}</Tag>;
     }
     case 'text':
-      return <p className="text-neutral-600 text-sm leading-relaxed">{properties.text || 'Text'}</p>;
+      return <p className="text-sm leading-relaxed" style={{ color: textColour }}>{properties.text || 'Text'}</p>;
 
     case 'button':
       return (
@@ -305,13 +399,14 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
     case 'input':
       return (
         <div className="space-y-1.5 w-full h-full flex flex-col">
-          <label className="text-sm font-bold text-neutral-700">{properties.label || 'Field'}</label>
+          <label className="text-sm font-bold" style={{ color: textColour }}>{properties.label || 'Field'}</label>
           <input
             type="text"
             placeholder={properties.placeholder || ''}
             value={formState[properties.fieldMapping || id] ?? urlParams[properties.fieldMapping || id] ?? ''}
             onChange={e => onFormUpdate(properties.fieldMapping || id, e.target.value)}
-            className="flex-1 px-4 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 outline-none"
+            className="flex-1 px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 outline-none"
+            style={{ backgroundColor: inputBg }}
           />
         </div>
       );
@@ -320,11 +415,12 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
       const opts = properties.options || [];
       return (
         <div className="space-y-1.5 w-full h-full flex flex-col">
-          <label className="text-sm font-bold text-neutral-700">{properties.label || 'Dropdown'}</label>
+          <label className="text-sm font-bold" style={{ color: textColour }}>{properties.label || 'Dropdown'}</label>
           <select
             value={formState[properties.fieldMapping || id] ?? urlParams[properties.fieldMapping || id] ?? ''}
             onChange={e => onFormUpdate(properties.fieldMapping || id, e.target.value)}
-            className="flex-1 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm outline-none"
+            className="flex-1 px-4 border border-neutral-200 rounded-xl text-sm outline-none"
+            style={{ backgroundColor: inputBg }}
           >
             <option value="">Select option…</option>
             {opts.map((o: any, i: number) => <option key={i} value={o.value}>{o.label}</option>)}
@@ -338,7 +434,7 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
       const val  = formState[properties.fieldMapping || id] ?? opts[0];
       return (
         <div className="space-y-1.5 w-full h-full">
-          <label className="text-sm font-bold text-neutral-700">{properties.label || 'Toggle'}</label>
+          <label className="text-sm font-bold" style={{ color: textColour }}>{properties.label || 'Toggle'}</label>
           <div className="flex bg-neutral-100 p-1 rounded-xl">
             {opts.map((o: string, i: number) => (
               <button key={i} onClick={() => onFormUpdate(properties.fieldMapping || id, o)}
@@ -377,10 +473,10 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
         <div className="w-full h-full overflow-auto rounded-xl border border-neutral-200 bg-white">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-neutral-50 border-b border-neutral-200">
+              <tr className="border-b border-neutral-200" style={{ backgroundColor: tableHeaderBg }}>
                 {startBtns.length > 0 && <th className="px-3 py-2 w-px" />}
                 {vis.map((col: string) => (
-                  <th key={col} className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-neutral-400">{col}</th>
+                  <th key={col} className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-white opacity-90">{col}</th>
                 ))}
                 {endBtns.length > 0 && <th className="px-3 py-2 w-px" />}
               </tr>

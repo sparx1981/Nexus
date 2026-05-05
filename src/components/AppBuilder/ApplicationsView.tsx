@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Layout, Settings, Trash2, ExternalLink, Database,
   Search, X, PlusCircle, Layers, Copy, LayoutGrid, List,
-  Globe, ChevronRight, Clock
+  Globe, ChevronRight, Clock, Info
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useSchemaStore } from '../../store/schemaStore';
@@ -318,6 +318,9 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                 <div className="space-y-5">
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Select Primary Datasource</label>
+                    <p className="text-[11px] text-neutral-500 leading-relaxed bg-neutral-50 dark:bg-slate-800/50 border border-neutral-200 dark:border-slate-700 rounded-xl px-3 py-2.5">
+                      Setting a datasource here links the <strong>whole application</strong> to a table — useful for form submissions or record lookups that span multiple components. Individual components like Data Tables and Charts can also connect to their own datasource independently via their properties.
+                    </p>
                     <div className="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto">
                       <button type="button" onClick={() => setNewApp({ ...newApp, dataSourceId: '' })}
                         className={cn('p-3 rounded-2xl border-2 text-left transition-all flex items-center gap-3', !newApp.dataSourceId ? 'border-primary-600 bg-primary-50/50 dark:bg-primary-950/20' : 'border-neutral-100 dark:border-neutral-800')}>
@@ -362,7 +365,16 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                   </div>
                   {newApp.dataSourceId && (
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Key Fields (for matching)</label>
+                      <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-1.5">
+                        Key Fields (for matching)
+                        <span className="relative group/tip cursor-default">
+                          <Info className="w-3 h-3 text-neutral-400 hover:text-primary-600 transition-colors" />
+                          <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 bg-neutral-900 text-white text-[10px] font-medium leading-relaxed rounded-xl px-3 py-2.5 opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
+                            Key fields uniquely identify a record. They are used in <strong>Update</strong> and <strong>Delete</strong> modes to find the exact row to modify. Choose fields like ID or email that are guaranteed to be unique.
+                            <span className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-neutral-900" />
+                          </span>
+                        </span>
+                      </label>
                       <div className="flex flex-wrap gap-2">
                         {tables.find(t => t.id === newApp.dataSourceId)?.fields.map(f => (
                           <button key={f.id} type="button"

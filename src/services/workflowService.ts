@@ -196,6 +196,45 @@ async function executeNode(node: any, context: Record<string, any>): Promise<Wor
         }
       }
 
+      // ── Google Sheets ────────────────────────────────────────────────────────
+      case 'google_sheets': {
+        const { sheetsToken, spreadsheetId, sheetName, columnMappings } = nodeConfig;
+        if (!sheetsToken || !spreadsheetId) {
+          return { nodeId: node.id, nodeType, nodeLabel, status: 'skipped',
+            message: 'Google Sheets: token and spreadsheet ID are required', timestamp: ts };
+        }
+        try {
+          // Resolve column values by substituting context placeholders like {{field.name}}
+          const resolveVal = (v: string) => String(v || '').replace(
+            /\{\{([^}]+)\}\}/g, (_: string, k: string) => context[k.trim()] ?? ''
+          );
+          // Build row values from column mappings array [{column, value}] or fall back to all context keys
+          let rowValues: string[];
+          if (Array.isArray(columnMappings) && columnMappings.length > 0) {
+            rowValues = columnMappings.map((m: any) => resolveVal(m.value || ''));
+          } else {
+            rowValues = Object.values(context).map(String);
+          }
+          const range = `${sheetName || 'Sheet1'}!A1`;
+          const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${sheetsToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: [rowValues] }),
+          });
+          if (!res.ok) {
+            const err = await res.text().catch(() => res.status.toString());
+            return { nodeId: node.id, nodeType, nodeLabel, status: 'error',
+              message: `Sheets API error ${res.status}: ${err.slice(0, 120)}`, timestamp: ts };
+          }
+          return { nodeId: node.id, nodeType, nodeLabel, status: 'success',
+            message: `Row appended to "${sheetName || 'Sheet1'}" in spreadsheet ${spreadsheetId.slice(0, 12)}…`, timestamp: ts };
+        } catch (e: any) {
+          return { nodeId: node.id, nodeType, nodeLabel, status: 'error',
+            message: `Google Sheets error: ${e.message}`, timestamp: ts };
+        }
+      }
+
       // ── HTTP / API ──────────────────────────────────────────────────────────
       case 'post_to_api':
       case 'advanced_http': {
@@ -506,6 +545,152 @@ export function stopEmailPolling(wsId: string) {
     if (key.startsWith(`${wsId}:`)) {
       clearInterval(timer);
       activePollers.delete(key);
+    }
+  }
+}
+
+// ── Scheduled workflow polling ───────────────────────────────────────────────
+
+const scheduledPollers = new Map<string, ReturnType<typeof setInterval>>();
+
+/**
+ * Check if a scheduled workflow should fire now and execute it.
+ * Uses a 60-second polling interval, comparing configured UTC time against current time.
+ */
+async function checkScheduledTrigger(wfDoc: any, wsId: string) {
+  const wf = wfDoc.data();
+  const nodes: any[] = wf.nodes || [];
+  const edges: any[] = wf.edges || [];
+
+  const triggerNodes = nodes.filter(
+    (n: any) => n.data?.category === 'trigger' && n.data?.type === 'scheduled'
+  );
+  if (triggerNodes.length === 0) return;
+
+  const now = new Date();
+  const nowUTCHour = now.getUTCHours();
+  const nowUTCMin = now.getUTCMinutes();
+  const nowUTCDay = now.getUTCDay();
+  const nowUTCDate = now.getUTCDate();
+
+  for (const triggerNode of triggerNodes) {
+    const { frequency, scheduleTime, hourlyEvery, hourlyMinute } = triggerNode.data || {};
+    const lastFiredKey = `nexus-scheduled-last-fired:${wsId}:${wfDoc.id}`;
+    let shouldFire = false;
+
+    if (frequency === 'Hourly') {
+      const everyN = parseInt(hourlyEvery || '1', 10);
+      const atMinute = parseInt(hourlyMinute || '0', 10);
+      if (nowUTCMin === atMinute && nowUTCHour % everyN === 0) {
+        const lastFired = parseInt(sessionStorage.getItem(lastFiredKey) || '0', 10);
+        const minuteTimestamp = Math.floor(Date.now() / 60000);
+        if (minuteTimestamp !== lastFired) {
+          shouldFire = true;
+          sessionStorage.setItem(lastFiredKey, String(minuteTimestamp));
+        }
+      }
+    } else {
+      const [configHour, configMin] = (scheduleTime || '09:00').split(':').map(Number);
+      if (nowUTCHour !== configHour || nowUTCMin !== configMin) continue;
+
+      const minuteTimestamp = Math.floor(Date.now() / 60000);
+      const lastFired = parseInt(sessionStorage.getItem(lastFiredKey) || '0', 10);
+      if (minuteTimestamp === lastFired) continue;
+
+      if (frequency === 'Daily') {
+        shouldFire = true;
+      } else if (frequency === 'Weekly') {
+        // Fire on Mondays (UTC day 1) — could be made configurable
+        shouldFire = nowUTCDay === 1;
+      } else if (frequency === 'Monthly') {
+        shouldFire = nowUTCDate === 1;
+      } else {
+        // Daily as safe fallback for Custom Cron (server-side cron handles precision)
+        shouldFire = true;
+      }
+
+      if (shouldFire) sessionStorage.setItem(lastFiredKey, String(minuteTimestamp));
+    }
+
+    if (!shouldFire) continue;
+
+    const schedCtx: Record<string, any> = {
+      'trigger.type': 'scheduled',
+      'trigger.frequency': frequency || 'Daily',
+      'trigger.firedAt': new Date().toISOString(),
+    };
+
+    const stepLogs: WorkflowStepLog[] = [{
+      nodeId: triggerNode.id,
+      nodeType: 'scheduled',
+      nodeLabel: 'Scheduled trigger fired',
+      status: 'success',
+      message: `Frequency: ${frequency || 'Daily'} at ${scheduleTime || '(hourly)'}`,
+      timestamp: Date.now(),
+    }];
+
+    const reachable = getReachableNodes([triggerNode.id], nodes, edges).filter(
+      (n: any) => n.id !== triggerNode.id
+    );
+    let hasError = false;
+    for (const node of reachable) {
+      const stepLog = await executeNode(node, schedCtx);
+      stepLogs.push(stepLog);
+      if (stepLog.status === 'error') { hasError = true; break; }
+    }
+
+    await writeLog(wsId, {
+      workflowId: wfDoc.id,
+      workflowName: wf.name || 'Unnamed Workflow',
+      triggeredAt: null,
+      trigger: 'scheduled',
+      status: hasError ? 'error' : 'success',
+      steps: stepLogs,
+    });
+  }
+}
+
+/**
+ * Start polling all active scheduled workflows for a workspace.
+ * Checks every 60 seconds. Call once on app load alongside startEmailPolling.
+ */
+export async function startScheduledPolling(wsId: string) {
+  stopScheduledPolling(wsId);
+
+  try {
+    const q = query(
+      collection(db, 'workspaces', wsId, 'workflows'),
+      where('status', '==', 'active')
+    );
+    const snap = await getDocs(q);
+
+    snap.docs.forEach(wfDoc => {
+      const wf = wfDoc.data();
+      const hasSched = (wf.nodes || []).some(
+        (n: any) => n.data?.category === 'trigger' && n.data?.type === 'scheduled'
+      );
+      if (!hasSched) return;
+
+      const key = `sched:${wsId}:${wfDoc.id}`;
+      // Check immediately, then every 60 s
+      checkScheduledTrigger(wfDoc, wsId).catch(console.error);
+      const timer = setInterval(
+        () => checkScheduledTrigger(wfDoc, wsId).catch(console.error),
+        60_000
+      );
+      scheduledPollers.set(key, timer);
+      console.log(`[ScheduledPoller] Started for ${wf.name}`);
+    });
+  } catch (e) {
+    console.error('[ScheduledPoller] Failed to start', e);
+  }
+}
+
+export function stopScheduledPolling(wsId: string) {
+  for (const [key, timer] of scheduledPollers.entries()) {
+    if (key.startsWith(`sched:${wsId}:`)) {
+      clearInterval(timer);
+      scheduledPollers.delete(key);
     }
   }
 }

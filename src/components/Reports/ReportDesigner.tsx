@@ -67,6 +67,8 @@ function ReportElementWrapper({ element, isSelected, onSelect, onDelete, onLayou
             </div>
             <div className="w-full h-full overflow-auto">{children}</div>
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                title="Delete component"
+                aria-label="Delete component"
                 className={cn('absolute -top-3 -right-3 w-6 h-6 bg-rose-600 text-white rounded-full flex items-center justify-center shadow-lg transition-opacity',
                     isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
                 <X className="w-3 h-3" />
@@ -172,14 +174,17 @@ export const ReportDesigner = ({ report, onClose }: ReportDesignerProps) => {
                         className="text-lg font-black text-neutral-900 dark:text-white bg-transparent outline-none w-64 uppercase tracking-tighter" />
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex bg-neutral-100 dark:bg-neutral-900 p-1 rounded-xl border border-neutral-200 dark:border-neutral-800">
-                        {(['text', 'table', 'chart', 'image'] as const).map(type => (
-                            <button key={type} onClick={() => handleAddElement(type)} title={`Add ${type}`}
-                                className="p-2 rounded-lg hover:bg-white dark:hover:bg-black text-neutral-400 hover:text-primary-600 transition-all active:scale-90">
-                                {type === 'text' && <Type className="w-4 h-4" />}
-                                {type === 'table' && <TableIcon className="w-4 h-4" />}
-                                {type === 'chart' && <BarChart3 className="w-4 h-4" />}
-                                {type === 'image' && <ImageIcon className="w-4 h-4" />}
+                    <div className="flex items-center bg-neutral-100 dark:bg-neutral-900 p-1 rounded-xl border border-neutral-200 dark:border-neutral-800 gap-0.5">
+                        <span className="text-[9px] font-black text-neutral-400 uppercase tracking-widest px-2">Add</span>
+                        {([
+                            { type: 'text',  icon: <Type className="w-3.5 h-3.5" />,     label: 'Text'  },
+                            { type: 'table', icon: <TableIcon className="w-3.5 h-3.5" />, label: 'Table' },
+                            { type: 'chart', icon: <BarChart3 className="w-3.5 h-3.5" />, label: 'Chart' },
+                            { type: 'image', icon: <ImageIcon className="w-3.5 h-3.5" />, label: 'Image' },
+                        ] as const).map(({ type, icon, label }) => (
+                            <button key={type} onClick={() => handleAddElement(type)} title={`Add ${label}`}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white dark:hover:bg-black text-neutral-500 hover:text-primary-600 transition-all active:scale-90 text-[11px] font-bold">
+                                {icon} {label}
                             </button>
                         ))}
                     </div>
@@ -190,7 +195,7 @@ export const ReportDesigner = ({ report, onClose }: ReportDesignerProps) => {
                     </button>
                     <button onClick={onClose}
                         className="flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition-all shadow-lg shadow-primary-200 dark:shadow-none active:scale-95">
-                        <Save className="w-4 h-4" />Finish Report
+                        <Save className="w-4 h-4" />Close Editor
                     </button>
                 </div>
             </header>

@@ -31,14 +31,16 @@ import {
   LayoutGrid,
   FolderOpen,
   SlidersHorizontal,
-  RotateCcw
+  RotateCcw,
+  ArrowLeftRight,
+  BellOff,
 } from 'lucide-react';
 import { useProjectSettingsStore, DEFAULT_PROJECT_SETTINGS } from './store/projectSettingsStore';
 import { cn } from './lib/utils';
 import { DataStudio } from './components/DataStudio/DataStudio';
 import { HelpResources } from './components/HelpResources';
 import { AppBuilder } from './components/AppBuilder/AppBuilder';
-import { startEmailPolling, stopEmailPolling } from './services/workflowService';
+import { startEmailPolling, stopEmailPolling, startScheduledPolling, stopScheduledPolling } from './services/workflowService';
 import { PublishedAppRunner } from './components/AppBuilder/PublishedAppRunner';
 import { AIAssistant } from './components/AIAssistant';
 import { DashboardSection } from './components/Dashboards/DashboardSection';
@@ -95,10 +97,10 @@ const SectionLabel = ({ label, collapsed }: { label: string; collapsed?: boolean
   )
 );
 
-const NOTIFICATIONS = [
+const INITIAL_NOTIFICATIONS = [
   { id: 1, title: 'Build Success', message: 'Nexus Core deployment completed successfully.', time: '2m ago', read: false, type: 'success' },
   { id: 2, title: 'Workflow Alert', message: 'Lead Rotation workflow failed for 3 records.', time: '1h ago', read: false, type: 'error' },
-  { id: 3, title: 'Schema Change', message: 'Sarah modified the "Contacts" table schema.', time: '4h ago', read: true, type: 'info' },
+  { id: 3, title: 'Schema Change', message: 'Sarah modified the \u201cContacts\u201d table schema.', time: '4h ago', read: true, type: 'info' },
 ];
 
 // SEARCH_RESULTS removed — replaced with live project index in App component
@@ -127,6 +129,22 @@ function App() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  // M-04: Live notifications state
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const unreadCount = notifications.filter(n => !n.read).length;
+  const markAllRead = () => setNotifications(ns => ns.map(n => ({ ...n, read: true })));
+  // M-01: Getting-started checklist
+  const [gettingStartedDismissed, setGettingStartedDismissed] = useState(() =>
+    localStorage.getItem('nexus-gs-dismissed') === 'true'
+  );
+  const [gettingStartedOpen, setGettingStartedOpen] = useState(() =>
+    localStorage.getItem('nexus-gs-dismissed') !== 'true'
+  );
+  const dismissGettingStarted = () => {
+    localStorage.setItem('nexus-gs-dismissed', 'true');
+    setGettingStartedDismissed(true);
+    setGettingStartedOpen(false);
+  };
   
   // Theme state
   type SchemeId = 'ocean' | 'garnet' | 'emerald' | 'midnight' | 'crimson' | 'royal' | 'sunset' | 'forest' | 'lavender' | 'rose' | 'slate' | 'amber' | 'ruby' | 'copper' | 'abyss';
@@ -193,7 +211,8 @@ function App() {
   useEffect(() => {
     if (isAuthenticated && selectedProjectId) {
       startEmailPolling(selectedProjectId).catch(console.error);
-      return () => stopEmailPolling(selectedProjectId);
+      startScheduledPolling(selectedProjectId).catch(console.error);
+      return () => { stopEmailPolling(selectedProjectId); stopScheduledPolling(selectedProjectId); };
     }
   }, [isAuthenticated, selectedProjectId]);
 
@@ -211,6 +230,25 @@ function App() {
       return unsub;
     }
   }, [isAuthenticated, selectedProjectId, loadProjectSettings]);
+
+  // Apply project appearance settings as CSS custom properties so all
+  // components that use var(--color-primary) etc. pick them up automatically.
+  useEffect(() => {
+    const root = document.documentElement;
+    const s = projectSettings;
+    root.style.setProperty('--project-primary',           s.componentPrimaryColour);
+    root.style.setProperty('--project-secondary',         s.componentSecondaryColour);
+    root.style.setProperty('--project-btn-standard',      s.buttonColourStandard);
+    root.style.setProperty('--project-btn-hover',         s.buttonColourHover);
+    root.style.setProperty('--project-btn-clicked',       s.buttonColourClicked);
+    root.style.setProperty('--project-app-bg',            s.applicationBackgroundColour);
+    root.style.setProperty('--project-heading-bg',        s.headingBackgroundColour);
+    root.style.setProperty('--project-label-font',        s.labelFontFamily);
+    root.style.setProperty('--project-text-font',         s.textFontFamily);
+    root.style.setProperty('--project-heading-font',      s.headingFontFamily);
+    // Override --color-primary so every existing component inherits the project colour
+    root.style.setProperty('--color-primary',             s.componentPrimaryColour);
+  }, [projectSettings]);
 
   useSyncData();
   useSyncDashboards();
@@ -294,7 +332,8 @@ function App() {
     if ('applications'.includes(q) || 'apps'.includes(q)) results.push({ id: 'nav-apps', title: 'Applications', category: 'Navigation', tab: 'apps', icon: '📱' });
     if ('workflows'.includes(q) || 'automation'.includes(q)) results.push({ id: 'nav-wf', title: 'Workflows', category: 'Navigation', tab: 'workflows', icon: '⚡' });
     if ('data'.includes(q) || 'tables'.includes(q) || 'studio'.includes(q)) results.push({ id: 'nav-data', title: 'Data Studio', category: 'Navigation', tab: 'data', icon: '🗄️' });
-    if ('dashboards'.includes(q) || 'reports'.includes(q)) results.push({ id: 'nav-dash', title: 'Dashboards', category: 'Navigation', tab: 'dashboards', icon: '📊' });
+    if ('dashboards'.includes(q)) results.push({ id: 'nav-dash', title: 'Dashboards', category: 'Navigation', tab: 'dashboards', icon: '📊' });
+    if ('reports'.includes(q)) results.push({ id: 'nav-reports', title: 'Reports', category: 'Navigation', tab: 'reports', icon: '📋' });
     if ('settings'.includes(q) || 'project'.includes(q)) results.push({ id: 'nav-settings', title: 'Project Settings', category: 'Navigation', tab: 'settings', icon: '⚙️' });
     return results.slice(0, 8);
   }, [searchQuery, tables]);
@@ -343,11 +382,11 @@ function App() {
             </div>
             {!sidebarCollapsed && (
               <div className="flex-1 text-left min-w-0">
-                <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-0.5" style={{ color: 'var(--color-primary)' }}>Active Project</p>
+                <p className="text-[9px] font-black uppercase tracking-widest leading-none mb-0.5" style={{ color: 'var(--color-primary)' }}>Switch Project</p>
                 <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{currentWorkspace?.name || 'My Project'}</p>
               </div>
             )}
-            {!sidebarCollapsed && <ChevronRight className="w-3 h-3 shrink-0 opacity-50" style={{ color: 'var(--color-primary)' }} />}
+            {!sidebarCollapsed && <ArrowLeftRight className="w-3 h-3 shrink-0 opacity-50" style={{ color: 'var(--color-primary)' }} />}
           </button>
 
           <SidebarItem 
@@ -366,55 +405,13 @@ function App() {
             collapsed={sidebarCollapsed}
           />
 
-          {/* Project Setup Section */}
-          {!sidebarCollapsed ? (
-            <div className="mt-2">
-              <button
-                onClick={() => setProjectSetupExpanded(p => !p)}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 group hover:bg-neutral-100"
-                style={{ color: 'var(--text-secondary)' }}
-              >
-                <FolderOpen className="w-5 h-5 shrink-0" style={{ color: 'var(--color-primary)' }} />
-                <span className="font-bold text-sm tracking-tight flex-1 text-left">Project Setup</span>
-                <ChevronDown className={`w-3 h-3 transition-transform ${projectSetupExpanded ? '' : '-rotate-90'}`} />
-              </button>
-              {projectSetupExpanded && (
-                <div className="ml-3 pl-3 border-l mt-1 space-y-1" style={{ borderColor: 'var(--border-color)' }}>
-                  <SidebarItem 
-                    icon={<Database className="w-4 h-4" />} 
-                    label="Data Studio" 
-                    active={activeTab === 'data'} 
-                    onClick={() => setActiveTab('data')}
-                    collapsed={false}
-                  />
-                  <SidebarItem 
-                    icon={<SlidersHorizontal className="w-4 h-4" />} 
-                    label="Project Settings" 
-                    active={false}
-                    onClick={() => setShowProjectSettings(true)}
-                    collapsed={false}
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <SidebarItem 
-                icon={<FolderOpen className="w-5 h-5" />} 
-                label="Project Setup" 
-                active={false}
-                onClick={() => setProjectSetupExpanded(p => !p)}
-                collapsed={sidebarCollapsed}
-              />
-              <SidebarItem 
-                icon={<Database className="w-5 h-5" />} 
-                label="Data Studio" 
-                active={activeTab === 'data'} 
-                onClick={() => setActiveTab('data')}
-                collapsed={sidebarCollapsed}
-              />
-            </>
-          )}
+          <SidebarItem 
+            icon={<Database className="w-5 h-5" />} 
+            label="Data Studio" 
+            active={activeTab === 'data'} 
+            onClick={() => setActiveTab('data')}
+            collapsed={sidebarCollapsed}
+          />
           
           <SectionLabel label="Insight" collapsed={sidebarCollapsed} />
           <SidebarItem 
@@ -439,7 +436,7 @@ function App() {
         <div className="p-3 mt-auto" style={{ borderTop: '1px solid var(--border-color)' }}>
           <SidebarItem 
             icon={<Settings className="w-5 h-5" />} 
-            label="Settings" 
+            label="Project Settings" 
             active={activeTab === 'settings'} 
             onClick={() => setActiveTab('settings')}
             collapsed={sidebarCollapsed}
@@ -464,6 +461,7 @@ function App() {
               {activeTab === 'data' && "Data Studio"}
               {activeTab === 'workflows' && "Workflows"}
               {activeTab === 'dashboards' && "Dashboards"}
+              {activeTab === 'reports' && "Reports"}
               {activeTab === 'trimble' && "Trimble Connect"}
               {activeTab === 'settings' && "Settings"}
             </h1>
@@ -530,11 +528,12 @@ function App() {
               <button
                 ref={paletteBtnRef}
                 onClick={openPalette}
-                className="w-8 h-8 flex items-center justify-center rounded-xl transition-all hover:scale-110"
+                className="flex items-center gap-1.5 h-8 px-2.5 rounded-xl transition-all hover:scale-105"
                 style={{ background: paletteOpen ? 'var(--color-primary-light)' : 'var(--bg-primary)', border: '1px solid var(--border-color)' }}
-                title="Color Scheme"
+                title="Change colour scheme"
               >
                 <Palette className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
+                <span className="text-[10px] font-bold hidden sm:inline" style={{ color: 'var(--text-secondary)' }}>Theme</span>
               </button>
             </div>
 
@@ -607,7 +606,9 @@ function App() {
                     className="p-2 text-neutral-600 hover:bg-neutral-100 rounded-xl transition-all relative group active:scale-90"
                 >
                   <Bell className="w-5 h-5 group-hover:text-primary-600" />
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-rose-600 rounded-full border-2 border-white animate-pulse"></span>
+                  {unreadCount > 0 && (
+                    <span className="absolute top-2 right-2 w-2 h-2 bg-rose-600 rounded-full border-2 border-white animate-pulse"></span>
+                  )}
                 </button>
 
                 {notifOpen && (
@@ -616,11 +617,13 @@ function App() {
                         <div className="absolute right-0 mt-3 w-80 bg-white dark:bg-[#121212] rounded-2xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden z-50 animate-in fade-in slide-in-from-top-3 duration-200">
                              <div className="px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-900/50">
                                  <h4 className="font-bold text-sm text-neutral-900 dark:text-white">Notifications</h4>
-                                 <button className="text-[10px] font-bold text-primary-600 uppercase tracking-widest hover:underline text-right">Mark all read</button>
+                                 {unreadCount > 0 && (
+                                   <button onClick={markAllRead} className="text-[10px] font-bold text-primary-600 uppercase tracking-widest hover:underline text-right">Mark all read</button>
+                                 )}
                              </div>
                              <div className="max-h-[400px] overflow-y-auto">
-                                 {NOTIFICATIONS.map(n => (
-                                     <div key={n.id} className={cn(
+                                 {notifications.map(n => (
+                                     <div key={n.id} onClick={() => setNotifications(ns => ns.map(m => m.id === n.id ? { ...m, read: true } : m))} className={cn(
                                          "p-4 border-b border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-900/50 transition-colors cursor-pointer group",
                                          !n.read && "bg-primary-50/20 dark:bg-primary-950/10"
                                      )}>
@@ -629,14 +632,19 @@ function App() {
                                                  "text-[10px] font-bold uppercase tracking-wider",
                                                  n.type === 'success' ? "text-emerald-600" : n.type === 'error' ? "text-rose-600" : "text-primary-600"
                                              )}>{n.title}</span>
-                                             <span className="text-[10px] text-neutral-400 font-medium">{n.time}</span>
+                                             <div className="flex items-center gap-2">
+                                               {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary-500 shrink-0"></span>}
+                                               <span className="text-[10px] text-neutral-400 font-medium">{n.time}</span>
+                                             </div>
                                          </div>
                                          <p className="text-xs text-neutral-600 dark:text-neutral-400 font-medium leading-relaxed">{n.message}</p>
                                      </div>
                                  ))}
                              </div>
                              <div className="p-3 bg-neutral-50 dark:bg-neutral-900 text-center border-t border-neutral-100 dark:border-neutral-800">
-                                 <button className="text-[10px] font-extrabold text-neutral-400 dark:text-neutral-500 uppercase tracking-widest hover:text-neutral-900 dark:hover:text-white">View All Notifications</button>
+                                 <p className="text-[10px] text-neutral-400 flex items-center justify-center gap-1.5">
+                                   <BellOff className="w-3 h-3" /> Real-time notifications coming soon
+                                 </p>
                              </div>
                         </div>
                     </>
@@ -689,11 +697,13 @@ function App() {
                     >
                         <LayoutGrid className="w-4 h-4 text-neutral-400" /> Switch Project
                     </button>
-                    <button className="w-full text-left px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-50 flex items-center gap-3">
-                        <User className="w-4 h-4 text-neutral-400" /> Profile Settings
+                    <button title="Coming soon — profile settings are in development" className="w-full text-left px-4 py-2 text-xs font-bold text-neutral-400 hover:bg-neutral-50 flex items-center gap-3 cursor-default" tabIndex={-1}>
+                        <User className="w-4 h-4 text-neutral-300" /> Profile Settings
+                        <span className="ml-auto text-[9px] font-black uppercase tracking-widest bg-neutral-100 text-neutral-400 px-1.5 py-0.5 rounded">Soon</span>
                     </button>
-                    <button className="w-full text-left px-4 py-2 text-xs font-bold text-neutral-600 hover:bg-neutral-50 flex items-center gap-3">
-                        <Database className="w-4 h-4 text-neutral-400" /> Workspace Data
+                    <button title="Coming soon — workspace data export is in development" className="w-full text-left px-4 py-2 text-xs font-bold text-neutral-400 hover:bg-neutral-50 flex items-center gap-3 cursor-default" tabIndex={-1}>
+                        <Database className="w-4 h-4 text-neutral-300" /> Workspace Data
+                        <span className="ml-auto text-[9px] font-black uppercase tracking-widest bg-neutral-100 text-neutral-400 px-1.5 py-0.5 rounded">Soon</span>
                     </button>
                     <div className="h-[1px] bg-neutral-100 my-2"></div>
                     <button 
@@ -712,6 +722,53 @@ function App() {
           </div>
         </header>
 
+        {/* M-01: Getting Started checklist — shown on first login, collapsible */}
+        {!gettingStartedDismissed && (
+          <div className="shrink-0 border-b transition-colors duration-300" style={{ background: 'var(--color-primary-light)', borderColor: 'var(--color-primary)20' }}>
+            <div className="px-6 py-3 flex items-center justify-between gap-4">
+              <button
+                onClick={() => setGettingStartedOpen(o => !o)}
+                className="flex items-center gap-3 flex-1 text-left group"
+              >
+                <Sparkles className="w-4 h-4 shrink-0" style={{ color: 'var(--color-primary)' }} />
+                <span className="text-sm font-bold" style={{ color: 'var(--color-primary)' }}>Getting Started</span>
+                <span className="text-xs font-medium text-neutral-500">— follow these steps to set up your workspace</span>
+                <ChevronDown className={cn("w-3.5 h-3.5 ml-auto transition-transform shrink-0", gettingStartedOpen && "rotate-180")} style={{ color: 'var(--color-primary)' }} />
+              </button>
+              <button onClick={dismissGettingStarted} title="Dismiss" className="p-1 rounded-md hover:bg-black/10 transition-colors shrink-0">
+                <X className="w-3.5 h-3.5 text-neutral-400" />
+              </button>
+            </div>
+            {gettingStartedOpen && (
+              <div className="px-6 pb-4 flex flex-wrap gap-3">
+                {[
+                  { step: 1, label: 'Create a table in Data Studio', tab: 'data', done: false },
+                  { step: 2, label: 'Build your first application', tab: 'apps', done: false },
+                  { step: 3, label: 'Set up a workflow', tab: 'workflows', done: false },
+                ].map(({ step, label, tab, done }) => (
+                  <button
+                    key={step}
+                    onClick={() => { setActiveTab(tab); }}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl border bg-white/70 hover:bg-white transition-all text-xs font-semibold text-neutral-700 shadow-sm"
+                    style={{ borderColor: 'var(--color-primary)30' }}
+                  >
+                    <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 text-[10px] font-black" style={{ borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}>
+                      {step}
+                    </div>
+                    {label}
+                  </button>
+                ))}
+                <button
+                  onClick={dismissGettingStarted}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-neutral-400 hover:text-neutral-600 transition-colors"
+                >
+                  I&apos;ll explore on my own
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Content Canvas */}
         <div className="flex-1 relative overflow-hidden flex flex-col pt-0">
           {activeTab === 'apps' && <AppBuilder onEditingAppChange={setEditingAppId} />}
@@ -727,160 +784,22 @@ function App() {
         <HelpResources isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
         <AIAssistant isOpen={aiOpen} onClose={() => setAiOpen(false)} />
 
-        {showProjectSettings && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowProjectSettings(false)}></div>
-            <div className="relative bg-white dark:bg-[#1E293B] rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 border border-neutral-100 dark:border-neutral-800">
-              <div className="px-8 py-6 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-800/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--color-primary-light)' }}>
-                    <SlidersHorizontal className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-neutral-900 dark:text-white">Project Settings</h3>
-                    <p className="text-xs text-neutral-500">Global settings applied to all applications in this project</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setProjectSettings(DEFAULT_PROJECT_SETTINGS)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-all"
-                    title="Reset to defaults"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" /> Reset
-                  </button>
-                  <button onClick={() => setShowProjectSettings(false)} className="p-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-full transition-colors">
-                    <X className="w-5 h-5 text-neutral-500" />
-                  </button>
-                </div>
-              </div>
-              <div className="p-8 max-h-[70vh] overflow-y-auto">
-                <div className="grid grid-cols-2 gap-x-8 gap-y-5">
-                  {/* Enable Headings */}
-                  <div className="col-span-2 flex items-center justify-between p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-black/10">
-                    <div>
-                      <p className="text-sm font-bold text-neutral-900 dark:text-white">Enable Application Headings</p>
-                      <p className="text-xs text-neutral-400">Show a header bar at the top of all applications</p>
-                    </div>
-                    <button
-                      onClick={() => setProjectSettings({ enableApplicationHeadings: !projectSettings.enableApplicationHeadings })}
-                      className={`relative w-12 h-6 rounded-full transition-all ${projectSettings.enableApplicationHeadings ? 'bg-primary-600' : 'bg-neutral-200 dark:bg-neutral-700'}`}
-                      style={projectSettings.enableApplicationHeadings ? { background: 'var(--color-primary)' } : {}}
-                    >
-                      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${projectSettings.enableApplicationHeadings ? 'left-7' : 'left-1'}`} />
-                    </button>
-                  </div>
-
-                  {/* Heading Text */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Heading Text</label>
-                    <input
-                      type="text"
-                      value={projectSettings.headingText}
-                      onChange={(e) => setProjectSettings({ headingText: e.target.value })}
-                      placeholder="Application heading text..."
-                      className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white transition-all"
-                    />
-                  </div>
-
-                  {/* Heading Height */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Heading Height (px)</label>
-                    <input
-                      type="number"
-                      value={projectSettings.headingHeight}
-                      onChange={(e) => setProjectSettings({ headingHeight: parseInt(e.target.value) || 48 })}
-                      className="w-full px-3 py-2.5 bg-neutral-50 dark:bg-[#0F172A] border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-primary-600/20 dark:text-white transition-all"
-                    />
-                  </div>
-
-                  {/* Heading Background Colour */}
-                  <ColorSettingField
-                    label="Heading Background Colour"
-                    value={projectSettings.headingBackgroundColour}
-                    onChange={(v) => setProjectSettings({ headingBackgroundColour: v })}
-                  />
-
-                  {/* Application Background */}
-                  <ColorSettingField
-                    label="Application Background Colour"
-                    value={projectSettings.applicationBackgroundColour}
-                    onChange={(v) => setProjectSettings({ applicationBackgroundColour: v })}
-                  />
-
-                  {/* Component Primary */}
-                  <ColorSettingField
-                    label="Component Primary Colour"
-                    value={projectSettings.componentPrimaryColour}
-                    onChange={(v) => setProjectSettings({ componentPrimaryColour: v })}
-                  />
-
-                  {/* Component Secondary */}
-                  <ColorSettingField
-                    label="Component Secondary Colour"
-                    value={projectSettings.componentSecondaryColour}
-                    onChange={(v) => setProjectSettings({ componentSecondaryColour: v })}
-                  />
-
-                  {/* Button Standard */}
-                  <ColorSettingField
-                    label="Button Colour Standard"
-                    value={projectSettings.buttonColourStandard}
-                    onChange={(v) => setProjectSettings({ buttonColourStandard: v })}
-                  />
-
-                  {/* Button Hover */}
-                  <ColorSettingField
-                    label="Button Colour Hover"
-                    value={projectSettings.buttonColourHover}
-                    onChange={(v) => setProjectSettings({ buttonColourHover: v })}
-                  />
-
-                  {/* Button Clicked */}
-                  <ColorSettingField
-                    label="Button Colour Clicked"
-                    value={projectSettings.buttonColourClicked}
-                    onChange={(v) => setProjectSettings({ buttonColourClicked: v })}
-                  />
-
-                  {/* Require Sign-In */}
-                  <div className="col-span-2 flex items-center justify-between p-4 rounded-xl border border-neutral-100 dark:border-neutral-800 bg-neutral-50/50 dark:bg-black/10">
-                    <div>
-                      <p className="text-sm font-bold text-neutral-900 dark:text-white">Require Sign-In</p>
-                      <p className="text-xs text-neutral-400">Users must be authenticated to access applications</p>
-                    </div>
-                    <button
-                      onClick={() => setProjectSettings({ requireSignIn: !projectSettings.requireSignIn })}
-                      className={`relative w-12 h-6 rounded-full transition-all`}
-                      style={{ background: projectSettings.requireSignIn ? 'var(--color-primary)' : '#D1D5DB' }}
-                    >
-                      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${projectSettings.requireSignIn ? 'left-7' : 'left-1'}`} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-8 flex justify-end">
-                  <button
-                    onClick={() => setShowProjectSettings(false)}
-                    className="px-8 py-3 text-white font-bold rounded-2xl transition-all active:scale-95 shadow-lg"
-                    style={{ background: 'var(--color-primary)' }}
-                  >Save & Close</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* AI Assistant FAB */}
       <button 
         onClick={() => setAiOpen(!aiOpen)}
+        title="Nexus AI Assistant"
         className={cn(
-            "fixed bottom-6 right-6 w-14 h-14 bg-primary-600 text-white rounded-2xl shadow-2xl shadow-primary-200 flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 group",
+            "fixed bottom-6 right-6 w-14 h-14 text-white rounded-2xl shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 group",
             aiOpen && "scale-0 opacity-0"
         )}
+        style={{ background: 'var(--color-primary)', boxShadow: '0 4px 24px 0 var(--color-primary-light)' }}
       >
         <Sparkles className="w-6 h-6 group-hover:animate-pulse" />
+        <span className="absolute right-16 bg-neutral-900 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
+          Nexus AI Assistant
+        </span>
       </button>
     </div>
   );

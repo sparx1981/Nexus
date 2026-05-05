@@ -19,6 +19,7 @@ export function Workflows() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
   const [deleteConfirmWf, setDeleteConfirmWf] = useState<{ id: string; name: string } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'draft'>('all');
 
   const { selectedProjectId } = useAuthStore();
 
@@ -84,7 +85,9 @@ export function Workflows() {
     );
   }
 
-  const filtered = workflows.filter(w => w.name?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filtered = workflows
+    .filter(w => w.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(w => statusFilter === 'all' || (w.status || 'draft') === statusFilter);
 
   const formatDate = (ts: any) => {
     if (!ts?.seconds) return '—';
@@ -112,6 +115,20 @@ export function Workflows() {
             <List className="w-4 h-4" />
           </button>
         </div>
+        {/* N-05: Status filter */}
+        <div className="flex items-center bg-neutral-100 dark:bg-slate-800 rounded-xl p-1 gap-0.5">
+          {(['all', 'active', 'draft'] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg text-xs font-bold transition-all capitalize',
+                statusFilter === s
+                  ? 'bg-white dark:bg-slate-700 shadow-sm text-neutral-900 dark:text-white'
+                  : 'text-neutral-400 hover:text-neutral-600'
+              )}>
+              {s === 'all' ? 'All' : s === 'active' ? '🟢 Active' : '⚫ Draft'}
+            </button>
+          ))}
+        </div>
         <div className="flex-1" />
         <button onClick={() => setShowAddModal(true)}
           className="text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all active:scale-95 hover:opacity-90 shrink-0"
@@ -127,13 +144,13 @@ export function Workflows() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center py-20 bg-white/50 dark:bg-slate-900/20 rounded-3xl border border-dashed border-neutral-200 dark:border-slate-800">
-            <div className="w-16 h-16 bg-neutral-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4">
-              <Plus className="w-8 h-8 text-neutral-300 dark:text-slate-600" />
+            <div className="w-12 h-12 bg-neutral-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4">
+              <Plus className="w-6 h-6 text-neutral-300 dark:text-slate-600" />
             </div>
             <h4 className="text-lg font-bold text-neutral-900 dark:text-white mb-2">No Workflows Found</h4>
-            <p className="text-neutral-500 dark:text-slate-400 max-w-xs mx-auto mb-6">Create automated sequences to handle business logic and data synchronization.</p>
+            <p className="text-sm text-neutral-500 dark:text-slate-400 max-w-xs mx-auto mb-6">Create automated sequences to handle business logic and data synchronization.</p>
             <button onClick={() => setShowAddModal(true)} className="text-white px-6 py-2 rounded-xl font-bold transition-all active:scale-95 hover:opacity-90" style={{ background: 'var(--color-primary)' }}>
-              Create First Workflow
+              Create your first Workflow
             </button>
           </div>
         ) : viewMode === 'card' ? (
@@ -149,10 +166,10 @@ export function Workflows() {
                   </div>
                   <div className="flex items-center gap-1">
                     <button onClick={e => handleToggleStatus(e, w.id, w.status)}
-                      title={w.status === 'active' ? 'Deactivate' : 'Activate'}
-                      className={cn('flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all',
-                        w.status === 'active' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 hover:bg-emerald-100' : 'bg-neutral-100 text-neutral-400 dark:bg-slate-800 hover:bg-blue-50 hover:text-blue-600')}>
-                      {w.status === 'active' ? <><ToggleRight className="w-3 h-3" /> Active</> : <><ToggleLeft className="w-3 h-3" /> Draft</>}
+                      title={w.status === 'active' ? 'Click to deactivate this workflow' : 'Click to activate this workflow'}
+                      className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border',
+                        w.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900 hover:bg-emerald-100' : 'bg-neutral-50 text-neutral-400 border-neutral-200 dark:bg-slate-800 dark:border-slate-700 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200')}>
+                      {w.status === 'active' ? <><ToggleRight className="w-3.5 h-3.5" /> Live</> : <><ToggleLeft className="w-3.5 h-3.5" /> Draft</>}
                     </button>
                     {/* Action buttons */}
                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">

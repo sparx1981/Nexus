@@ -2,12 +2,13 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X, Send, Cpu, Sparkles, User, Loader2, Database, Zap, Globe,
   CheckCircle2, XCircle, ChevronDown, ChevronRight, AlertTriangle,
-  Table2, FolderPlus, Search, Clock
+  Table2, FolderPlus, Search, Clock, RotateCcw
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { getNexusAssistantResponse, NexusAction } from '../services/geminiService';
+import { getNexusAssistantResponse, NexusAction, isApiKeyConfigured } from '../services/geminiService';
 import { useSchemaStore } from '../store/schemaStore';
 import { useAuthStore } from '../store/authStore';
+import { useProjectSettingsStore } from '../store/projectSettingsStore';
 import { db } from '../lib/firebase';
 import {
   collection, query, orderBy, limit, getDocs,
@@ -219,15 +220,28 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [retryState, setRetryState] = useState<{ attempt: number; countdown: number; total: number } | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState('Thinking…');
+  const [pendingRetryMessage, setPendingRetryMessage] = useState<string | null>(null);
   const [context, setContext] = useState<ProjectContext>({ schema: [], applications: [], workflows: [], recentLogs: [] });
   const [contextReady, setContextReady] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Countdown ticker for rate-limit retry display
+  useEffect(() => {
+    if (!retryState || retryState.countdown <= 0) return;
+    const t = setTimeout(() => {
+      setRetryState(prev => prev ? { ...prev, countdown: prev.countdown - 1 } : null);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [retryState]);
+
   const tables = useSchemaStore(state => state.tables);
   const { addTable, addField } = useSchemaStore();
   const selectedProjectId = useAuthStore(state => state.selectedProjectId);
+  const { setSettings: setProjectSettings } = useProjectSettingsStore();
 
   // ── Load live project context from Firestore ──────────────────────────────
 
@@ -487,12 +501,29 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           tableNameToId[step.payload.name.toLowerCase()] = tableId;
           result = `✓ Table "${step.payload.name}"`;
         } else if (step.type === 'create_app') {
-          // Resolve dataSourceId by table name if needed
+          // Resolve dataSourceId — try explicit name first, then infer from app name
           const p = { ...step.payload };
           if (p.dataSourceId && tableNameToId[p.dataSourceId.toLowerCase()]) {
+            // AI provided a table name / ID — resolve it
             p.dataSourceId = tableNameToId[p.dataSourceId.toLowerCase()];
+          } else if (!p.dataSourceId) {
+            // dataSourceId is empty — infer table from app name
+            // e.g. "Lessons App" → try "lessons", "Bookings Manager" → try "bookings"
+            const appNameLower = (p.name || '').toLowerCase();
+            const inferredTable = Object.keys(tableNameToId).find(tableName =>
+              appNameLower.includes(tableName) || tableName.includes(appNameLower.replace(/\s*(app|manager|view|form)$/i, '').trim())
+            );
+            if (inferredTable) p.dataSourceId = tableNameToId[inferredTable];
           }
           result = `✓ ${await executeCreateApp(p)}`;
+        } else if (step.type === 'set_project_settings') {
+          // Apply colour theme and other visual settings from the AI
+          try {
+            await setProjectSettings(step.payload || {});
+            result = `✓ Project theme applied`;
+          } catch (e: any) {
+            result = `✗ Theme: ${e.message}`;
+          }
         } else if (step.type === 'create_workflow') {
           const p = { ...step.payload };
           if (p.triggerTableId && tableNameToId[p.triggerTableId.toLowerCase()]) {
@@ -542,9 +573,24 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
     const userMessage: Message = { role: 'user', content: input.trim() };
+
+    // ── Auto-confirm: if user types a yes/go-ahead phrase and there's a pending action ──
+    const confirmPhrases = /^(yes|yeah|go ahead|confirm|ok|okay|do it|build it|create it|sure|please do|make them|build these|create them|yes please|yep|absolutely|proceed)\b/i;
+    const lastPendingIdx = [...messages].reverse().findIndex(m => m.actionState === 'pending');
+    const pendingIdx = lastPendingIdx !== -1 ? messages.length - 1 - lastPendingIdx : -1;
+    if (pendingIdx !== -1 && confirmPhrases.test(input.trim())) {
+      setMessages(prev => [...prev, userMessage]);
+      setInput('');
+      handleConfirm(pendingIdx);
+      return;
+    }
+
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setRetryState(null);
+    setLoadingStatus('Thinking…');
+    setPendingRetryMessage(null);
 
     // Build conversation history for AI (text only, no UI state)
     const historyForAI = [...messages, userMessage].map(m => ({
@@ -552,8 +598,16 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       content: m.role === 'assistant' ? m.content : m.content
     }));
 
+    const handleRetryCallback = (attempt: number, delayMs: number) => {
+      const secs = Math.round(delayMs / 1000);
+      setLoadingStatus(`Rate limit hit — retrying in ${secs}s (attempt ${attempt} of 4)…`);
+      setRetryState({ attempt, countdown: secs, total: secs });
+    };
+
     try {
-      const response = await getNexusAssistantResponse(historyForAI, buildFullContext());
+      const response = await getNexusAssistantResponse(historyForAI, buildFullContext(), handleRetryCallback);
+      setRetryState(null);
+      setLoadingStatus('Thinking…');
 
       // If AI wants to query data, execute the query and call AI again with results
       if (response.action?.type === 'query_data') {
@@ -574,7 +628,7 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
             table: qPayload.tableName,
             description: qPayload.description,
             count: rows.length,
-            records: rows.slice(0, 20) // Cap for context size
+            records: rows.slice(0, 20)
           }
         };
         const summaryHistory = [
@@ -601,7 +655,22 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         addAssistantMessage({ content: response.message });
       }
     } catch (e: any) {
-      addAssistantMessage({ content: `Error: ${e.message}` });
+      setRetryState(null);
+      setLoadingStatus('Thinking…');
+      if (e.message === 'RATE_LIMIT') {
+        // Store the message text so the user can retry with one click
+        setPendingRetryMessage(userMessage.content);
+        addAssistantMessage({
+          content: "The AI service is currently busy and couldn't respond after several retries. Your message has been saved — tap **Retry** below to try again, or wait a moment and re-send.",
+          isRateLimit: true,
+        } as any);
+      } else if (e.message === 'NO_API_KEY') {
+        addAssistantMessage({
+          content: "⚠️ No Gemini API key is configured. Add `VITE_GEMINI_API_KEY=your_key` to your `.env` file, then restart the dev server. You can get a free key at [aistudio.google.com](https://aistudio.google.com).",
+        });
+      } else {
+        addAssistantMessage({ content: `Something went wrong: ${e.message}` });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -632,7 +701,46 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
       // Add a follow-up assistant message
       setTimeout(() => {
-        addAssistantMessage({ content: `Done! ${result} What else can I help you with?` });
+        // If tables were created (create_table or multi_action with table steps), suggest creating apps
+        const createdTables = msg.action.type === 'create_table'
+          || (msg.action.type === 'multi_action' && (msg.action.payload?.steps || []).some((s: any) => s.type === 'create_table')
+              && !(msg.action.payload?.steps || []).some((s: any) => s.type === 'create_app'));
+
+        if (createdTables) {
+          addAssistantMessage({
+            content: `Done! ${result}\n\nWould you like me to create applications for these tables? I can build add, update, and view interfaces linked to each table automatically.`,
+            action: {
+              type: 'multi_action',
+              description: 'Create applications for the newly created tables',
+              payload: {
+                projectSummary: 'Create apps for new tables',
+                steps: (msg.action.type === 'create_table'
+                  ? [msg.action.payload]
+                  : (msg.action.payload?.steps || []).filter((s: any) => s.type === 'create_table').map((s: any) => s.payload)
+                ).map((tbl: any) => ({
+                  type: 'create_app',
+                  description: `App for ${tbl.name || 'table'}`,
+                  payload: {
+                    name: `${tbl.name || 'Table'} App`,
+                    description: `Manage ${tbl.name || 'records'}`,
+                    dataSourceId: tbl.name || '',
+                    mode: 'add',
+                    components: (tbl.fields || []).slice(0, 6).map((f: any) => ({
+                      type: ['single_select', 'multi_select', 'boolean'].includes(f.type) ? 'select' : 'input',
+                      label: f.name,
+                      fieldMapping: f.name,
+                      width: 320,
+                      height: 48,
+                    })),
+                  }
+                }))
+              }
+            },
+            actionState: 'pending',
+          });
+        } else {
+          addAssistantMessage({ content: `Done! ${result} What else can I help you with?` });
+        }
       }, 300);
     } catch (e: any) {
       updateMessageAt(msgIndex, { actionState: 'error', actionResult: e.message });
@@ -697,6 +805,22 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         </div>
       )}
 
+      {/* ── No API key warning ──────────────────────────────────────────── */}
+      {!isApiKeyConfigured() && (
+        <div className="mx-3 mt-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 shrink-0">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-amber-800 dark:text-amber-300 leading-tight">Gemini API key not configured</p>
+              <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-1 leading-relaxed">
+                Add <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded font-mono">VITE_GEMINI_API_KEY=…</code> to your <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded font-mono">.env</code> file and restart the server.
+                Get a free key at <a href="https://aistudio.google.com" target="_blank" rel="noopener" className="underline font-semibold">aistudio.google.com</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
 
@@ -725,17 +849,68 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
 
             {/* Bubble + cards */}
             <div className={cn("flex flex-col max-w-[84%]", msg.role === 'user' ? "items-end" : "items-start")}>
-              {msg.content && (
-                <div className={cn(
-                  "px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap",
-                  msg.role === 'assistant'
-                    ? "bg-neutral-100 dark:bg-slate-800 text-neutral-800 dark:text-slate-200 rounded-tl-sm"
-                    : "bg-primary-600 text-white rounded-tr-sm shadow-sm"
-                )}>
-                  {msg.content}
-                  {msg.isThinking && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 opacity-60" />}
-                </div>
-              )}
+              {msg.content && (() => {
+                // Second-chance parse: if content looks like a full JSON response object,
+                // extract just the human-readable message and rescue any embedded action.
+                let displayContent = msg.content;
+                let rescuedAction = msg.action;
+                if (!msg.action && msg.role === 'assistant' && msg.content.trimStart().startsWith('{')) {
+                  try {
+                    const firstBrace = msg.content.indexOf('{');
+                    let depth = 0, end = -1;
+                    for (let ci = firstBrace; ci < msg.content.length; ci++) {
+                      if (msg.content[ci] === '{') depth++;
+                      else if (msg.content[ci] === '}') { depth--; if (depth === 0) { end = ci; break; } }
+                    }
+                    if (end !== -1) {
+                      const parsed = JSON.parse(msg.content.substring(firstBrace, end + 1));
+                      if (typeof parsed?.message === 'string') {
+                        displayContent = parsed.message;
+                        if (parsed.action && parsed.action.type !== 'none') rescuedAction = parsed.action;
+                      }
+                    }
+                  } catch { /* keep original */ }
+                }
+
+                // Render simple **bold** markdown
+                const renderMarkdown = (text: string) => {
+                  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+                  return parts.map((part, pi) =>
+                    part.startsWith('**') && part.endsWith('**')
+                      ? <strong key={pi}>{part.slice(2, -2)}</strong>
+                      : part
+                  );
+                };
+
+                return (
+                  <>
+                    <div className={cn(
+                      "px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap",
+                      msg.role === 'assistant'
+                        ? "bg-neutral-100 dark:bg-slate-800 text-neutral-800 dark:text-slate-200 rounded-tl-sm"
+                        : "bg-primary-600 text-white rounded-tr-sm shadow-sm"
+                    )}>
+                      {renderMarkdown(displayContent)}
+                      {msg.isThinking && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 opacity-60" />}
+                    </div>
+
+                    {/* Rescued action card — shown when JSON leaked into content */}
+                    {rescuedAction && rescuedAction !== msg.action && rescuedAction.type !== 'query_data' && (
+                      <ActionPlanCard
+                        action={rescuedAction}
+                        state="pending"
+                        result={undefined}
+                        onConfirm={() => {
+                          // Inject the rescued action into the message then confirm
+                          updateMessageAt(i, { action: rescuedAction, actionState: 'pending', content: displayContent });
+                          setTimeout(() => handleConfirm(i), 50);
+                        }}
+                        onCancel={() => handleCancel(i)}
+                      />
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Action confirmation card */}
               {msg.action && msg.actionState && msg.action.type !== 'query_data' && (
@@ -759,15 +934,94 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
           </div>
         ))}
 
-        {/* Typing indicator */}
+        {/* Typing / retry indicator */}
         {isLoading && (
           <div className="flex gap-2.5">
             <div className="w-7 h-7 rounded-full bg-primary-50 dark:bg-primary-950 text-primary-600 flex items-center justify-center shrink-0">
               <Sparkles className="w-3.5 h-3.5" />
             </div>
-            <div className="bg-neutral-100 dark:bg-slate-800 px-3 py-2 rounded-2xl rounded-tl-sm flex items-center gap-2">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-400" />
-              <span className="text-xs text-neutral-400">Thinking…</span>
+            <div className="bg-neutral-100 dark:bg-slate-800 px-3 py-2 rounded-2xl rounded-tl-sm flex items-center gap-2 max-w-xs">
+              {retryState ? (
+                <>
+                  {/* Animated ring for countdown */}
+                  <div className="relative w-5 h-5 shrink-0">
+                    <svg className="w-5 h-5 -rotate-90" viewBox="0 0 20 20">
+                      <circle cx="10" cy="10" r="8" fill="none" stroke="#e5e7eb" strokeWidth="2.5"/>
+                      <circle
+                        cx="10" cy="10" r="8" fill="none"
+                        stroke="#1A56DB" strokeWidth="2.5"
+                        strokeDasharray={`${2 * Math.PI * 8}`}
+                        strokeDashoffset={`${2 * Math.PI * 8 * (1 - retryState.countdown / retryState.total)}`}
+                        strokeLinecap="round"
+                        style={{ transition: 'stroke-dashoffset 1s linear' }}
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-primary-600">{retryState.countdown}</span>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-700 dark:text-slate-300 leading-tight">Rate limit — retrying</p>
+                    <p className="text-[10px] text-neutral-400">Attempt {retryState.attempt} of 4</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-400 shrink-0" />
+                  <span className="text-xs text-neutral-400">{loadingStatus}</span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Retry button — shown after final rate-limit failure */}
+        {!isLoading && pendingRetryMessage && (
+          <div className="flex gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-amber-50 dark:bg-amber-950/30 text-amber-600 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-3.5 h-3.5" />
+            </div>
+            <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 rounded-2xl rounded-tl-sm max-w-xs space-y-2">
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">AI service is busy</p>
+              <p className="text-[10px] text-amber-700 dark:text-amber-400 leading-relaxed">Your message was saved. Tap retry to try again.</p>
+              <button
+                onClick={() => {
+                  const msg = pendingRetryMessage;
+                  setPendingRetryMessage(null);
+                  setInput(msg);
+                  // Use setTimeout so input state is set before handleSend reads it
+                  setTimeout(() => {
+                    setMessages(prev => [...prev, { role: 'user', content: msg }]);
+                    setInput('');
+                    setIsLoading(true);
+                    setRetryState(null);
+                    setLoadingStatus('Thinking…');
+                    const historyForAI = [...messages, { role: 'user' as const, content: msg }].map(m => ({ role: m.role, content: m.content }));
+                    getNexusAssistantResponse(historyForAI, buildFullContext(), (attempt, delayMs) => {
+                      const secs = Math.round(delayMs / 1000);
+                      setLoadingStatus(`Rate limit hit — retrying in ${secs}s (attempt ${attempt} of 4)…`);
+                      setRetryState({ attempt, countdown: secs, total: secs });
+                    }).then(response => {
+                      setRetryState(null);
+                      setLoadingStatus('Thinking…');
+                      if (response.action && response.action.type !== 'none') {
+                        addAssistantMessage({ content: response.message, action: response.action, actionState: 'pending' });
+                      } else {
+                        addAssistantMessage({ content: response.message });
+                      }
+                    }).catch(err => {
+                      setRetryState(null);
+                      if (err.message === 'RATE_LIMIT') {
+                        setPendingRetryMessage(msg);
+                        addAssistantMessage({ content: "Still busy — your message is saved. Please try again in a minute.", isRateLimit: true } as any);
+                      } else {
+                        addAssistantMessage({ content: `Something went wrong: ${err.message}` });
+                      }
+                    }).finally(() => setIsLoading(false));
+                  }, 50);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition-all active:scale-95"
+              >
+                <RotateCcw className="w-3 h-3" /> Retry now
+              </button>
             </div>
           </div>
         )}

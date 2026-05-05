@@ -169,7 +169,7 @@ export function DataStudio({ defaultTab }: { defaultTab?: 'schema' | 'table' | '
 
       <div className="flex-1 relative overflow-hidden transition-colors duration-300" style={{ background: 'var(--bg-primary)' }}>
         {activeSubTab === 'schema' && <SchemaView />}
-        {activeSubTab === 'table' && <DataTableView />}
+        {activeSubTab === 'table' && <DataTableView onCreateTable={() => setShowAddTable(true)} onImportCSV={() => setShowCSVImport(true)} onConnectAPI={() => setActiveSubTab('sources')} />}
         {activeSubTab === 'query' && <QueryBuilderView />}
         {activeSubTab === 'sources' && <SourcesView onNavigate={(tab) => setActiveSubTab(tab)} />}
       </div>
@@ -441,7 +441,7 @@ function CSVImportModal({ onFinish, onCancel }: { onFinish: () => void; onCancel
 
 import { Loader2 } from 'lucide-react';
 
-function DataTableView() {
+function DataTableView({ onCreateTable, onImportCSV, onConnectAPI }: { onCreateTable: () => void; onImportCSV: () => void; onConnectAPI: () => void }) {
     const { isAuthenticated, selectedProjectId } = useAuthStore();
     const { tables, selectedTableId, setSelectedTableId, addField, updateTable, deleteTable } = useSchemaStore();
     const [records, setRecords] = useState<any[]>([]);
@@ -450,6 +450,8 @@ function DataTableView() {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [affectedApps, setAffectedApps] = useState<any[]>([]);
     const [showAddField, setShowAddField] = useState(false);
+    const [editingField, setEditingField] = useState<any | null>(null);
+    const [editingFieldDraft, setEditingFieldDraft] = useState<any>({});
     const [newField, setNewField] = useState({
         name: '',
         description: '',
@@ -564,9 +566,23 @@ function DataTableView() {
     };
 
     if (tables.length === 0) return (
-      <div className="flex-1 flex flex-col items-center justify-center text-neutral-400 dark:text-neutral-600">
-        <TableIcon className="w-16 h-16 mb-4 opacity-20" />
-        <p className="font-bold uppercase tracking-widest text-xs">No tables found</p>
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center" style={{ background: 'var(--bg-surface)' }}>
+        <TableIcon className="w-12 h-12 mb-4 opacity-20 text-neutral-400" />
+        <h3 className="font-bold text-neutral-900 dark:text-white text-lg mb-1">Start by adding your data</h3>
+        <p className="text-sm text-neutral-500 dark:text-slate-400 mb-8 max-w-xs">Tables store your app's data. Create one manually, import from a file, or connect a live API.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-xl">
+          {[
+            { icon: '＋', label: 'Create a table manually', action: onCreateTable },
+            { icon: '📥', label: 'Import from CSV', action: onImportCSV },
+            { icon: '🔗', label: 'Connect a REST API', action: onConnectAPI },
+          ].map(card => (
+            <button key={card.label} onClick={card.action}
+              className="flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-dashed border-neutral-200 dark:border-slate-700 hover:border-primary-400 hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-all text-center group">
+              <span className="text-2xl">{card.icon}</span>
+              <span className="text-xs font-bold text-neutral-700 dark:text-neutral-300 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{card.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
     );
 
@@ -824,6 +840,102 @@ function DataTableView() {
                     </div>
                 </div>
             )}
+
+            {/* ── Field Properties modal ───────────────────────── */}
+            {editingField && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-neutral-900/60 backdrop-blur-sm" onClick={() => setEditingField(null)}></div>
+                    <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border border-neutral-200 dark:border-slate-800">
+                        <div className="px-6 py-4 border-b border-neutral-100 dark:border-slate-800 flex items-center justify-between">
+                            <div>
+                                <h3 className="font-bold text-neutral-900 dark:text-white">Field Properties</h3>
+                                <p className="text-xs text-neutral-400 mt-0.5">Edit name and size — type cannot be changed</p>
+                            </div>
+                            <button onClick={() => setEditingField(null)} className="p-1 hover:bg-neutral-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                                <X className="w-4 h-4 text-neutral-400" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {/* Field type - read-only */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Field Type (read-only)</label>
+                                <div className="w-full px-3 py-2.5 bg-neutral-100 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-bold text-neutral-400 dark:text-slate-500 flex items-center gap-2 select-none">
+                                    <span className="text-[9px] uppercase tracking-widest font-black">{editingField.type}</span>
+                                    <span className="text-[9px] text-neutral-300 italic">— cannot be changed</span>
+                                </div>
+                            </div>
+                            {/* Field name */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Field Name</label>
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={editingFieldDraft.name}
+                                    onChange={(e) => setEditingFieldDraft((d: any) => ({ ...d, name: e.target.value }))}
+                                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-bold focus:ring-2 focus:ring-primary-600/20 outline-none dark:text-white"
+                                />
+                            </div>
+                            {/* Description */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Description</label>
+                                <input
+                                    type="text"
+                                    value={editingFieldDraft.description}
+                                    onChange={(e) => setEditingFieldDraft((d: any) => ({ ...d, description: e.target.value }))}
+                                    placeholder="Optional field description…"
+                                    className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm outline-none dark:text-white"
+                                />
+                            </div>
+                            {/* Size / Precision (type-appropriate) */}
+                            {editingField.type === FieldType.NUMBER ? (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Total Digits</label>
+                                        <input type="number" min={1} max={38} value={editingFieldDraft.precision}
+                                            onChange={(e) => setEditingFieldDraft((d: any) => ({ ...d, precision: parseInt(e.target.value) || 10 }))}
+                                            className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none dark:text-white" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Decimal Places</label>
+                                        <input type="number" min={0} max={10} value={editingFieldDraft.scale}
+                                            onChange={(e) => setEditingFieldDraft((d: any) => ({ ...d, scale: parseInt(e.target.value) || 0 }))}
+                                            className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none dark:text-white" />
+                                    </div>
+                                </div>
+                            ) : [FieldType.TEXT, FieldType.LONG_TEXT].includes(editingField.type) ? (
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Max Field Size (characters)</label>
+                                    <input type="number" min={1} max={65535} value={editingFieldDraft.size}
+                                        onChange={(e) => setEditingFieldDraft((d: any) => ({ ...d, size: parseInt(e.target.value) || 255 }))}
+                                        className="w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-sm font-bold outline-none dark:text-white" />
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="px-6 pb-6 flex gap-3">
+                            <button onClick={() => setEditingField(null)}
+                                className="flex-1 py-2.5 text-neutral-600 dark:text-neutral-400 font-bold hover:bg-neutral-50 dark:hover:bg-neutral-800 rounded-xl transition-all">
+                                Cancel
+                            </button>
+                            <button
+                                disabled={!editingFieldDraft.name?.trim()}
+                                onClick={async () => {
+                                    if (!table || !editingFieldDraft.name?.trim()) return;
+                                    const updatedFields = table.fields.map(f =>
+                                        f.id === editingField.id ? { ...f, ...editingFieldDraft } : f
+                                    );
+                                    await updateTable(selectedTableId!, { fields: updatedFields });
+                                    setEditingField(null);
+                                }}
+                                className="flex-1 py-2.5 text-white font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50"
+                                style={{ background: 'var(--color-primary)' }}
+                            >
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="flex-1 overflow-auto">
                 <table className="w-full text-sm border-collapse text-left">
                     <thead className="sticky top-0 z-10">
@@ -832,7 +944,8 @@ function DataTableView() {
                             {table?.fields.map(f => (
                                 <th key={f.id} className="px-6 py-3 font-bold text-neutral-600 uppercase text-[10px] tracking-widest border-r border-neutral-200 last:border-r-0 dark:text-slate-400 dark:border-slate-800 group/th">
                                     <div className="flex items-center justify-between gap-2 overflow-hidden">
-                                        <div className="flex items-center gap-2 cursor-pointer group/label overflow-hidden">
+                                        <div className="flex items-center gap-2 cursor-pointer group/label overflow-hidden"
+                                            onClick={() => { setEditingField(f); setEditingFieldDraft({ name: f.name, description: f.description || '', size: f.size ?? 255, precision: f.precision ?? 10, scale: f.scale ?? 2, dateFormat: f.dateFormat || 'YYYY-MM-DD' }); }}>
                                             {f.type === FieldType.CALCULATED && <span className="text-[9px] font-black bg-primary-100 text-primary-600 px-1 rounded truncate">fx</span>}
                                             <span className="truncate">{f.name}</span>
                                             <ChevronDown className="w-3 h-3 text-neutral-300 group-hover/label:text-neutral-900 dark:group-hover/label:text-white transition-colors shrink-0" />

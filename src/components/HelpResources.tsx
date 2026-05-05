@@ -466,7 +466,7 @@ function DocContent({ id }: { id: string }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const HelpResources = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
-  const [activeTab, setActiveTab] = useState<'docs' | 'release'>('docs');
+  const [activeTab, setActiveTab] = useState<'docs' | 'release' | 'shortcuts'>('docs');
   const [docSection, setDocSection] = useState('overview');
   const [search, setSearch] = useState('');
 
@@ -495,7 +495,7 @@ export const HelpResources = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
         {/* Tabs */}
         <div className="flex border-b border-neutral-200 bg-white shrink-0">
-          {[{id:'docs',label:'User Documentation'},{id:'release',label:'Release Notes'}].map(t => (
+          {[{id:'docs',label:'User Documentation'},{id:'shortcuts',label:'Keyboard Shortcuts'},{id:'release',label:'Release Notes'}].map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id as any)}
               className={cn('flex-1 py-3 text-[10px] font-black uppercase tracking-widest transition-all border-b-2',
                 activeTab === t.id ? 'text-primary-600 border-primary-600 bg-primary-50/20' : 'text-neutral-500 border-transparent hover:text-neutral-900')}>
@@ -532,6 +532,46 @@ export const HelpResources = ({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 <DocContent id={docSection} />
               </main>
             </>
+          )}
+
+          {activeTab === 'shortcuts' && (
+            <div className="flex-1 overflow-y-auto p-8 bg-white">
+              <div className="max-w-lg mx-auto space-y-8">
+                <div>
+                  <h2 className="text-lg font-black text-neutral-900 mb-1">Keyboard Shortcuts</h2>
+                  <p className="text-xs text-neutral-500">Speed up your workflow in the Application Builder with these shortcuts.</p>
+                </div>
+                {[
+                  { group: 'Editing', shortcuts: [
+                    ['Ctrl + Z', 'Undo'],
+                    ['Ctrl + Shift + Z', 'Redo'],
+                    ['Ctrl + S', 'Save to cloud'],
+                    ['Delete / Backspace', 'Delete selected component'],
+                    ['Escape', 'Clear selection'],
+                  ]},
+                  { group: 'Selection', shortcuts: [
+                    ['Click', 'Select component'],
+                    ['Ctrl + Click', 'Add to multi-select'],
+                    ['Drag on empty canvas', 'Rubber-band multi-select'],
+                  ]},
+                  { group: 'Canvas', shortcuts: [
+                    ['Right-click selection', 'Align / Front / Back / Delete menu'],
+                  ]},
+                ].map(section => (
+                  <div key={section.group}>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-3">{section.group}</p>
+                    <div className="rounded-xl border border-neutral-200 overflow-hidden">
+                      {section.shortcuts.map(([key, action], i) => (
+                        <div key={key} className={cn('flex items-center justify-between gap-4 px-4 py-3', i < section.shortcuts.length - 1 && 'border-b border-neutral-100')}>
+                          <span className="text-xs text-neutral-600 font-medium">{action}</span>
+                          <kbd className="px-2.5 py-1 bg-neutral-100 text-neutral-700 text-[10px] font-mono font-bold rounded-lg border border-neutral-200 whitespace-nowrap">{key}</kbd>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {activeTab === 'release' && (

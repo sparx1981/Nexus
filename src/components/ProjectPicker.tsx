@@ -206,8 +206,8 @@ export function ProjectPicker() {
                   {searchQuery ? 'No matching projects' : 'No projects yet'}
                 </p>
                 {!searchQuery && (
-                  <button onClick={() => setShowCreate(true)} className="text-xs font-bold hover:underline" style={{ color: 'var(--color-primary)' }}>
-                    Create your first project →
+                  <button onClick={() => setShowCreate(true)} className="mt-1 px-4 py-2 text-xs font-bold text-white rounded-xl transition-all active:scale-95 hover:opacity-90" style={{ background: 'var(--color-primary)' }}>
+                    + New Project
                   </button>
                 )}
               </div>

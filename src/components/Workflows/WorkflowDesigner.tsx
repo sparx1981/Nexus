@@ -16,7 +16,7 @@ import 'reactflow/dist/style.css';
 import { 
     Zap, Mail, RefreshCw, PlusCircle, Globe, Database, Cpu, Clock, Split, Repeat, Timer, Inbox, KeyRound, Eye, EyeOff, Paperclip, ArrowLeft, ChevronLeft, ChevronRight, RotateCcw, RotateCw,
     Save, Play, Settings2, X, Search, GitBranch, MessageSquare, Webhook, ScrollText, ToggleLeft, ToggleRight,
-    Plus, Trash2, Send, Loader2, AlertCircle, CheckCircle2, XCircle
+    Plus, Trash2, Send, Loader2, AlertCircle, CheckCircle2, XCircle, Table2
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useSchemaStore } from '../../store/schemaStore';
@@ -39,6 +39,7 @@ const NODE_TYPES_CONFIG = {
         'post_to_api':    { label: 'Post To API',      icon: <Globe className="w-4 h-4"/>,         color: 'bg-violet-600', textColor: 'text-violet-600' },
         'ai_generate':    { label: 'AI Generate',      icon: <Cpu className="w-4 h-4"/>,           color: 'bg-emerald-500',textColor: 'text-emerald-500'},
         'google_chat':    { label: 'Google Chat',      icon: <MessageSquare className="w-4 h-4"/>, color: 'bg-blue-500',   textColor: 'text-blue-500'   },
+        'google_sheets':  { label: 'Google Sheets',    icon: <Table2 className="w-4 h-4"/>,        color: 'bg-emerald-600',textColor: 'text-emerald-600'},
         'advanced_http':  { label: 'Advanced HTTP',    icon: <Webhook className="w-4 h-4"/>,       color: 'bg-indigo-600', textColor: 'text-indigo-600' },
     },
     logic: {
@@ -178,6 +179,57 @@ function ConditionBuilder({ nodeId, data, onUpdate }: { nodeId: string; data: an
                 <p className="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">Branch Behaviour</p>
                 <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500"/><span className="text-[10px] font-medium text-neutral-600 dark:text-slate-400"><strong className="text-emerald-600">True</strong> handle — continues workflow</span></div>
                 <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-500"/><span className="text-[10px] font-medium text-neutral-600 dark:text-slate-400"><strong className="text-rose-600">False</strong> handle — terminates if unconnected</span></div>
+            </div>
+        </div>
+    );
+}
+
+
+/* GoogleSheetsConfig — MAJ-03 */
+function GoogleSheetsConfig({ nodeId, data, onUpdate }: { nodeId: string; data: any; onUpdate: (id: string, d: any) => void }) {
+    const inp = 'w-full px-3 py-2 bg-neutral-50 dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none text-neutral-900 dark:text-white';
+    const [fieldMappings, setFieldMappings] = React.useState<{id:string;column:string;value:string}[]>(
+        data.sheetFieldMappings || [{ id: 'fm_0', column: '', value: '' }]
+    );
+    const updateMappings = (mappings: typeof fieldMappings) => {
+        setFieldMappings(mappings);
+        onUpdate(nodeId, { ...data, sheetFieldMappings: mappings });
+    };
+    return (
+        <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-[10px] text-amber-700 dark:text-amber-300">
+                Authenticate via your Google account. The workflow will append a new row when triggered.
+            </div>
+            <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">OAuth Token</label>
+                <input value={data.sheetsToken||''} onChange={e=>onUpdate(nodeId,{...data,sheetsToken:e.target.value})} placeholder="ya29...." className={inp+' font-mono'} type="password"/>
+            </div>
+            <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Spreadsheet ID</label>
+                <input value={data.spreadsheetId||''} onChange={e=>onUpdate(nodeId,{...data,spreadsheetId:e.target.value})} placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" className={inp+' font-mono'}/>
+            </div>
+            <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Sheet Name / Tab</label>
+                <input value={data.sheetName||''} onChange={e=>onUpdate(nodeId,{...data,sheetName:e.target.value})} placeholder="Sheet1" className={inp}/>
+            </div>
+            <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Column → Value mapping</label>
+                    <button onClick={() => updateMappings([...fieldMappings, { id:`fm_${Date.now()}`, column:'', value:'' }])}
+                        className="text-[10px] font-bold text-primary-600 hover:underline">+ Add</button>
+                </div>
+                {fieldMappings.map((fm,i) => (
+                    <div key={fm.id} className="flex gap-2 items-center">
+                        <input value={fm.column} onChange={e => updateMappings(fieldMappings.map((m,j)=>j===i?{...m,column:e.target.value}:m))} placeholder="Column name" className={inp+' flex-1'}/>
+                        <span className="text-neutral-300 text-xs">→</span>
+                        <input value={fm.value} onChange={e => updateMappings(fieldMappings.map((m,j)=>j===i?{...m,value:e.target.value}:m))} placeholder="{{record.name}}" className={inp+' flex-1 font-mono'}/>
+                        {fieldMappings.length > 1 && (
+                            <button onClick={() => updateMappings(fieldMappings.filter((_,j)=>j!==i))} className="text-rose-400 hover:text-rose-600">
+                                <X className="w-3.5 h-3.5"/>
+                            </button>
+                        )}
+                    </div>
+                ))}
             </div>
         </div>
     );
@@ -362,11 +414,10 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
                     setNodes(data.nodes);
                     setTimeout(() => pushHistory(data.nodes, data.edges || []), 0);
                 } else setNodes([
-                    { id:'node_1', type:'workflow', position:{x:250,y:50}, data:{category:'trigger',type:'record_created',description:'Table: Users'} },
-                    { id:'node_2', type:'workflow', position:{x:250,y:250}, data:{category:'action',type:'send_email',description:'To: Welcome Email'} },
+                    { id:'node_1', type:'workflow', position:{x:300,y:120}, data:{category:'trigger',type:'record_created',description:'Choose a trigger…'} },
                 ]);
                 if (data.edges?.length > 0) setEdges(data.edges);
-                else setEdges([{ id:'edge_1', source:'node_1', target:'node_2', animated:true, style:{stroke:'#1A56DB',strokeWidth:3}, markerEnd:{type:MarkerType.ArrowClosed,color:'#1A56DB'} }]);
+                else setEdges([]);
             }
         });
     }, [workflowId, selectedProjectId]);
@@ -626,7 +677,49 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
 
                             {selectedNode.data.type==='record_created' && (<div className="space-y-1.5 animate-in fade-in slide-in-from-top-2"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Target Table</label><select value={(selectedNode.data as any).tableId||''} onChange={e=>setNodes(nds=>nds.map(n=>n.id===selectedNode.id?{...n,data:{...n.data,tableId:e.target.value,description:`Table: ${tables.find(t=>t.id===e.target.value)?.name||e.target.value}`}}:n))} className={cfgCls}><option value="">Select table...</option>{tables.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>)}
                             {selectedNode.data.type==='webhook' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Webhook ID</label><input className={cfgCls} value={selectedNode.id} readOnly/></div><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Secret Key</label><input className={cfgCls+' font-mono'} type="password" defaultValue="sk_test_12345"/></div></div>)}
-                            {selectedNode.data.type==='scheduled' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Frequency</label><select className={cfgCls}><option>Daily</option><option>Weekly</option><option>Monthly</option><option>Custom Cron</option></select></div><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Time (UTC)</label><input type="time" className={cfgCls} defaultValue="09:00"/></div></div>)}
+                            {selectedNode.data.type==='scheduled' && (() => {
+                                const freq = (selectedNode.data as any).frequency || 'Daily';
+                                const time = (selectedNode.data as any).scheduleTime || '09:00';
+                                const hourlyEvery = (selectedNode.data as any).hourlyEvery || '1';
+                                const hourlyMinute = (selectedNode.data as any).hourlyMinute || '00';
+                                const updateSched = (patch: Record<string,string>) => setNodes((nds: any[]) => nds.map((n: any) => n.id === selectedNode.id ? { ...n, data: { ...n.data, ...patch } } : n));
+                                return (
+                                    <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Frequency</label>
+                                            <select value={freq} onChange={e => updateSched({ frequency: e.target.value })} className={cfgCls}>
+                                                <option>Hourly</option>
+                                                <option>Daily</option>
+                                                <option>Weekly</option>
+                                                <option>Monthly</option>
+                                                <option>Custom Cron</option>
+                                            </select>
+                                        </div>
+                                        {freq === 'Hourly' ? (
+                                            <div className="flex gap-3">
+                                                <div className="flex-1 space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Every N hours</label>
+                                                    <input type="number" min="1" max="23" value={hourlyEvery} onChange={e => updateSched({ hourlyEvery: e.target.value })} className={cfgCls} />
+                                                </div>
+                                                <div className="flex-1 space-y-1.5">
+                                                    <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Starting at minute</label>
+                                                    <select value={hourlyMinute} onChange={e => updateSched({ hourlyMinute: e.target.value })} className={cfgCls}>
+                                                        <option value="00">:00</option>
+                                                        <option value="15">:15</option>
+                                                        <option value="30">:30</option>
+                                                        <option value="45">:45</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Time (UTC)</label>
+                                                <input type="time" value={time} onChange={e => updateSched({ scheduleTime: e.target.value })} className={cfgCls} />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             {selectedNode.data.type==='send_email' && <EmailNodeConfig nodeId={selectedNode.id} data={selectedNode.data} setNodes={setNodes} cfgCls={cfgCls} />}
                             {['create_record','update_record'].includes(selectedNode.data.type) && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Target Table</label><select className={cfgCls}>{tables.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div></div>)}
                             {selectedNode.data.type==='ai_generate' && (<div className="space-y-4 animate-in fade-in slide-in-from-top-2"><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">AI Prompt</label><textarea className={cfgCls+' h-24 resize-none'} placeholder="Summarize the previous record..."/></div><div className="space-y-1.5"><label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest block">Output Variable</label><input className={cfgCls+' font-mono text-primary-600 font-bold'} defaultValue="{{ai_summary}}"/></div></div>)}
@@ -635,6 +728,7 @@ export function WorkflowDesigner({ workflowId, onBack }: WorkflowDesignerProps) 
 
                             {selectedNode.data.type==='condition'     && <ConditionBuilder   nodeId={selectedNode.id} data={selectedNode.data} onUpdate={(id,d)=>setNodes(nds=>nds.map(n=>n.id===id?{...n,data:{...n.data,...d}}:n))}/>}
                             {selectedNode.data.type==='google_chat'    && <GoogleChatConfig     nodeId={selectedNode.id} data={selectedNode.data} onUpdate={updateNodeData}/>}
+                            {selectedNode.data.type==='google_sheets'  && <GoogleSheetsConfig   nodeId={selectedNode.id} data={selectedNode.data} onUpdate={updateNodeData}/>}
                             {selectedNode.data.type==='received_email'  && <ReceivedEmailConfig  nodeId={selectedNode.id} data={selectedNode.data} setNodes={setNodes} cfgCls={cfgCls}/>}
                             {selectedNode.data.type==='advanced_http' && <AdvancedHttpConfig nodeId={selectedNode.id} data={selectedNode.data} onUpdate={updateNodeData}/>}
                         </div>

@@ -19,6 +19,8 @@ interface BuilderState {
   moveComponent: (id: string, x: number, y: number) => void;
   updateComponentSize: (id: string, width: number, height: number) => void;
   setComponentParent: (id: string, parentId: string | null, slotKey?: string | null) => void;
+  bringToFront: (id: string) => void;
+  sendToBack: (id: string) => void;
   alignSelected: (direction: 'left' | 'right' | 'top' | 'bottom') => void;
   undo: () => void;
   redo: () => void;
@@ -97,6 +99,26 @@ export const useBuilderStore = create<BuilderState>((set, get) => ({
   setComponentParent: (id, parentId, slotKey = null) => {
     const { components } = get();
     set({ components: components.map(c => c.id === id ? { ...c, parentId, slotKey } : c) });
+  },
+
+  bringToFront: (id) => {
+    const { components, history, historyIndex } = get();
+    const idx = components.findIndex(c => c.id === id);
+    if (idx === -1 || idx === components.length - 1) return;
+    const newComponents = [...components.filter(c => c.id !== id), components[idx]];
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newComponents);
+    set({ components: newComponents, history: newHistory, historyIndex: newHistory.length - 1 });
+  },
+
+  sendToBack: (id) => {
+    const { components, history, historyIndex } = get();
+    const idx = components.findIndex(c => c.id === id);
+    if (idx === -1 || idx === 0) return;
+    const newComponents = [components[idx], ...components.filter(c => c.id !== id)];
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newComponents);
+    set({ components: newComponents, history: newHistory, historyIndex: newHistory.length - 1 });
   },
 
   alignSelected: (direction) => {
