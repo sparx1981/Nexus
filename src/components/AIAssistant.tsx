@@ -5,7 +5,6 @@ import {
   Table2, FolderPlus, Search, Clock, RotateCcw, Copy, Check,
   PenSquare, Maximize2, Minimize2, BarChart3, FileText, Undo2
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { streamNexusAssistantResponse, getNexusAssistantResponse, NexusAction, isApiKeyConfigured, buildCompactContext } from '../services/geminiService';
 import { useSchemaStore } from '../store/schemaStore';
@@ -95,51 +94,35 @@ function renderMarkdown(text: string): React.ReactNode {
 
   const inline = (s: string): React.ReactNode[] =>
     s.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).map((p, pi) => {
-      if (p.startsWith('**') && p.endsWith('**')) return <strong key={pi} className="font-black text-neutral-900 dark:text-white px-0.5">{p.slice(2, -2)}</strong>;
-      if (p.startsWith('`') && p.endsWith('`')) return <code key={pi} className="px-1.5 py-0.5 bg-neutral-200/60 dark:bg-slate-700 rounded-md text-[10px] font-mono text-primary-700 dark:text-primary-300 border border-neutral-300/40 dark:border-slate-600/40">{p.slice(1, -1)}</code>;
-      if (p.startsWith('*') && p.endsWith('*') && p.length > 2) return <em key={pi} className="italic text-neutral-700 dark:text-slate-300">{p.slice(1, -1)}</em>;
+      if (p.startsWith('**') && p.endsWith('**')) return <strong key={pi}>{p.slice(2, -2)}</strong>;
+      if (p.startsWith('`') && p.endsWith('`')) return <code key={pi} className="px-1 py-0.5 bg-neutral-200 dark:bg-slate-700 rounded text-[10px] font-mono">{p.slice(1, -1)}</code>;
+      if (p.startsWith('*') && p.endsWith('*') && p.length > 2) return <em key={pi}>{p.slice(1, -1)}</em>;
       return p;
     });
 
   while (i < lines.length) {
     const line = lines[i];
-    if (line.startsWith('## ')) { nodes.push(<p key={k++} className="font-black text-[11px] text-neutral-900 dark:text-white uppercase tracking-wider mt-4 mb-2 border-b border-neutral-200/40 pb-1">{inline(line.slice(3))}</p>); i++; continue; }
-    if (line.startsWith('# '))  { nodes.push(<p key={k++} className="font-black text-xs text-neutral-900 dark:text-white uppercase tracking-[0.1em] mt-5 mb-3 bg-neutral-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-neutral-200/50 dark:border-slate-700/50">{inline(line.slice(2))}</p>); i++; continue; }
+    if (line.startsWith('## ')) { nodes.push(<p key={k++} className="font-bold text-[11px] text-neutral-700 dark:text-slate-200 mt-2 mb-0.5">{inline(line.slice(3))}</p>); i++; continue; }
+    if (line.startsWith('# '))  { nodes.push(<p key={k++} className="font-black text-xs text-neutral-800 dark:text-slate-100 mt-2 mb-0.5">{inline(line.slice(2))}</p>); i++; continue; }
     if (line.match(/^[-*] /)) {
       const items: React.ReactNode[] = [];
-      while (i < lines.length && lines[i].match(/^[-*] /)) { 
-        items.push(
-          <li key={i} className="flex gap-2 items-start group/li">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary-500/40 group-hover/li:bg-primary-500 transition-colors mt-1.5 shrink-0" />
-            <span className="flex-1">{inline(lines[i].slice(2))}</span>
-          </li>
-        ); 
-        i++; 
-      }
-      nodes.push(<ul key={k++} className="space-y-2 my-3 pl-1">{items}</ul>); continue;
+      while (i < lines.length && lines[i].match(/^[-*] /)) { items.push(<li key={i}>{inline(lines[i].slice(2))}</li>); i++; }
+      nodes.push(<ul key={k++} className="list-disc pl-4 space-y-0.5 my-1">{items}</ul>); continue;
     }
     if (line.match(/^\d+\. /)) {
       const items: React.ReactNode[] = [];
-      while (i < lines.length && lines[i].match(/^\d+\. /)) { 
-        items.push(
-          <li key={i} className="flex gap-2 items-start group/li">
-            <span className="w-4 h-4 rounded-lg bg-primary-100 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center font-black text-[9px] shrink-0">{items.length + 1}</span>
-            <span className="flex-1">{inline(lines[i].replace(/^\d+\. /, ''))}</span>
-          </li>
-        ); 
-        i++; 
-      }
-      nodes.push(<ol key={k++} className="space-y-2 my-3 pl-1">{items}</ol>); continue;
+      while (i < lines.length && lines[i].match(/^\d+\. /)) { items.push(<li key={i}>{inline(lines[i].replace(/^\d+\. /, ''))}</li>); i++; }
+      nodes.push(<ol key={k++} className="list-decimal pl-4 space-y-0.5 my-1">{items}</ol>); continue;
     }
     if (line.startsWith('```')) {
       const code: string[] = []; i++;
       while (i < lines.length && !lines[i].startsWith('```')) { code.push(lines[i]); i++; } i++;
-      nodes.push(<pre key={k++} className="bg-[#0D1117] text-emerald-400 rounded-xl p-3 text-[10px] font-mono overflow-x-auto my-3 border border-slate-800 shadow-inner">{code.join('\n')}</pre>); continue;
+      nodes.push(<pre key={k++} className="bg-neutral-800 text-emerald-300 rounded-lg p-2 text-[10px] font-mono overflow-x-auto my-1">{code.join('\n')}</pre>); continue;
     }
-    if (line.trim() === '') { nodes.push(<div key={k++} className="h-2" />); i++; continue; }
-    nodes.push(<p key={k++} className="mb-2 last:mb-0 leading-relaxed">{inline(line)}</p>); i++;
+    if (line.trim() === '') { nodes.push(<br key={k++} />); i++; continue; }
+    nodes.push(<span key={k++}>{inline(line)}{'\n'}</span>); i++;
   }
-  return <div className="space-y-1">{nodes}</div>;
+  return <>{nodes}</>;
 }
 
 // ── AI-I03: Pre-flight validation ─────────────────────────────────────────────
@@ -186,19 +169,19 @@ function ActionPlanCard({ action, state, result, executionProgress, undoEntry, o
     : [{ type: action.type, description: action.description }];
 
   return (
-    <div className={cn("mt-2 rounded-2xl border overflow-hidden text-xs transition-all shadow-sm",
-      isPending ? "border-primary-200 bg-white/80 dark:bg-primary-950/20 dark:border-primary-900/40"
-        : isDone ? "border-emerald-200 bg-white/80 dark:bg-emerald-950/20 dark:border-emerald-900/40"
+    <div className={cn("mt-2 rounded-2xl border overflow-hidden text-xs transition-all",
+      isPending ? "border-primary-200 bg-primary-50/60 dark:bg-primary-950/20 dark:border-primary-900/40"
+        : isDone ? "border-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/20 dark:border-emerald-900/40"
         : isError ? "border-rose-200 bg-rose-50/60" : "border-neutral-200 bg-neutral-50/60")}>
-      <div className="flex items-center gap-2 px-3 py-3">
-        <div className={cn("p-1.5 rounded-xl text-white shrink-0 shadow-sm", actionColour(action.type))}>{actionIcon(action.type)}</div>
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <div className={cn("p-1.5 rounded-lg text-white shrink-0", actionColour(action.type))}>{actionIcon(action.type)}</div>
         <div className="flex-1 min-w-0">
-          <p className="font-extrabold text-neutral-900 dark:text-white truncate uppercase tracking-tight text-[10px]">{action.description}</p>
-          {action.type === 'multi_action' && <p className="text-neutral-400 text-[9px] font-bold uppercase tracking-widest">{stepList.length} operations planned</p>}
+          <p className="font-bold text-neutral-900 dark:text-white truncate">{action.description}</p>
+          {action.type === 'multi_action' && <p className="text-neutral-400 text-[10px]">{stepList.length} steps</p>}
         </div>
         {(isPending || isExecuting) && (
           <button onClick={() => setExpanded(v => !v)} className="p-1 rounded-lg hover:bg-neutral-200/60 transition-colors shrink-0">
-            {expanded ? <ChevronDown className="w-4 h-4 text-neutral-400" /> : <ChevronRight className="w-4 h-4 text-neutral-400" />}
+            {expanded ? <ChevronDown className="w-3.5 h-3.5 text-neutral-400" /> : <ChevronRight className="w-3.5 h-3.5 text-neutral-400" />}
           </button>
         )}
         {isDone && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
@@ -208,52 +191,52 @@ function ActionPlanCard({ action, state, result, executionProgress, undoEntry, o
 
       {/* AI-N02: Step-by-step progress during execution */}
       {isExecuting && executionProgress && (
-        <div className="px-3 pb-3 border-t border-neutral-100 dark:border-slate-800/40 pt-3 space-y-2 bg-neutral-50/30 dark:bg-black/20">
+        <div className="px-3 pb-2 border-t border-neutral-200/60 pt-2 space-y-1.5">
           {executionProgress.steps.map((s, i) => (
-            <div key={i} className="flex items-center gap-2.5 text-[11px]">
+            <div key={i} className="flex items-center gap-2 text-[11px]">
               {s.status === 'done'    && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
               {s.status === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary-500 shrink-0" />}
               {s.status === 'error'   && <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />}
-              {s.status === 'pending' && <div className="w-3.5 h-3.5 rounded-full border border-neutral-300 shrink-0" />}
-              <span className={cn("font-bold tracking-tight", s.status === 'done' ? "text-neutral-300 line-through" : s.status === 'running' ? "text-neutral-800 dark:text-white" : "text-neutral-400")}>{s.description}</span>
+              {s.status === 'pending' && <div className="w-3.5 h-3.5 rounded-full border-2 border-neutral-300 shrink-0" />}
+              <span className={cn("font-medium", s.status === 'done' ? "text-neutral-400 line-through" : s.status === 'running' ? "text-neutral-800 dark:text-white" : "text-neutral-400")}>{s.description}</span>
             </div>
           ))}
         </div>
       )}
 
       {expanded && !isExecuting && stepList.length > 0 && (
-        <div className="px-4 pb-3 space-y-2 border-t border-neutral-100 dark:border-slate-800/40 pt-3 bg-neutral-50/50 dark:bg-black/10">
+        <div className="px-3 pb-2 space-y-1 border-t border-neutral-200/60 pt-2">
           {stepList.map((s, i) => (
-            <div key={i} className="flex items-start gap-2.5 text-[11px] text-neutral-600 dark:text-slate-400">
-              <span className="w-4 h-4 rounded-lg bg-white dark:bg-slate-800 border border-neutral-200 dark:border-slate-700 flex items-center justify-center font-black text-[9px] shrink-0 shadow-sm">{i + 1}</span>
-              <span className="font-bold leading-tight mt-0.5">{s.description}</span>
+            <div key={i} className="flex items-center gap-2 text-[11px] text-neutral-500">
+              <span className="w-4 h-4 rounded-full bg-neutral-200 flex items-center justify-center font-black text-[9px] shrink-0">{i + 1}</span>
+              <span className="font-medium">{s.description}</span>
             </div>
           ))}
         </div>
       )}
 
       {result && (
-        <div className={cn("px-4 pb-3 pt-2 text-[11px] font-black uppercase tracking-widest border-t border-neutral-100 dark:border-slate-800/40",
-          isDone ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600")}>{result}</div>
+        <div className={cn("px-3 pb-2 pt-1 text-[11px] font-medium border-t border-neutral-200/60",
+          isDone ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600")}>{result}</div>
       )}
 
       {isPending && (
         <div className="flex gap-2 px-3 pb-3 pt-1">
-          <button onClick={onConfirm} className="flex-1 py-2 bg-primary-600 hover:bg-primary-700 text-white font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 text-[10px] shadow-sm shadow-primary-200 dark:shadow-none">Confirm</button>
-          <button onClick={onCancel} className="flex-1 py-2 bg-neutral-100 hover:bg-neutral-200 dark:bg-slate-800 text-neutral-600 dark:text-white font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 text-[10px]">Cancel</button>
+          <button onClick={onConfirm} className="flex-1 py-1.5 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl transition-colors text-[11px]">Confirm</button>
+          <button onClick={onCancel} className="flex-1 py-1.5 bg-neutral-200 hover:bg-neutral-300 dark:bg-slate-700 text-neutral-700 dark:text-white font-bold rounded-xl transition-colors text-[11px]">Cancel</button>
         </div>
       )}
       {isExecuting && !executionProgress && (
-        <div className="flex items-center gap-2 px-3 pb-3 pt-1 text-[11px] text-neutral-400 font-bold uppercase tracking-tight">
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-primary-600" /> Applying changes…
+        <div className="flex items-center gap-2 px-3 pb-3 pt-1 text-[11px] text-neutral-500">
+          <Loader2 className="w-3 h-3 animate-spin" /> Applying…
         </div>
       )}
 
       {/* AI-I04: Undo button after success (30s window) */}
       {isDone && undoEntry && onUndo && (
         <div className="px-3 pb-3 pt-1">
-          <button onClick={onUndo} className="w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-amber-600 bg-amber-50 dark:bg-amber-950/20 hover:bg-amber-100 px-3 py-2 rounded-xl transition-all border border-amber-200 dark:border-amber-900/30">
-            <Undo2 className="w-3.5 h-3.5" /> Undo {undoEntry.label}
+          <button onClick={onUndo} className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600 hover:bg-amber-50 px-2.5 py-1.5 rounded-lg transition-all">
+            <Undo2 className="w-3 h-3" /> Undo {undoEntry.label}
           </button>
         </div>
       )}
@@ -267,37 +250,29 @@ function QueryResultsCard({ results, description }: { results: any[]; descriptio
   const [showAll, setShowAll] = useState(false);
   const display = showAll ? results : results.slice(0, 5);
   if (!results.length) return (
-    <div className="mt-2 rounded-2xl border border-neutral-200 dark:border-slate-800 bg-neutral-50/60 dark:bg-black/20 px-3 py-2.5 text-xs text-neutral-500 italic">No records found matching your query.</div>
+    <div className="mt-2 rounded-2xl border border-neutral-200 bg-neutral-50/60 px-3 py-2.5 text-xs text-neutral-500">No records found.</div>
   );
   const keys = Object.keys(results[0]).filter(k => k !== '_rowId' && k !== '_id').slice(0, 5);
   return (
-    <div className="mt-2 rounded-2xl border border-emerald-200 dark:border-emerald-900/40 bg-white dark:bg-black/20 overflow-hidden shadow-sm">
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 dark:bg-emerald-950/20 border-b border-emerald-100 dark:border-emerald-900/30">
-        <div className="p-1 bg-emerald-100 dark:bg-emerald-900 rounded-lg text-emerald-600"><Table2 className="w-3.5 h-3.5" /></div>
-        <div className="flex-1 min-w-0">
-          <p className="font-black text-[10px] text-emerald-900 dark:text-emerald-300 uppercase tracking-widest">{results.length} record{results.length !== 1 ? 's' : ''} found</p>
-          <p className="text-[9px] text-emerald-600/70 font-bold uppercase truncate">{description || 'Data Preview'}</p>
-        </div>
+    <div className="mt-2 rounded-2xl border border-emerald-200 bg-emerald-50/40 dark:bg-emerald-950/20 dark:border-emerald-900/40 overflow-hidden text-xs">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-emerald-200/60">
+        <Table2 className="w-3.5 h-3.5 text-emerald-600" />
+        <span className="font-bold text-emerald-800 dark:text-emerald-300">{results.length} record{results.length !== 1 ? 's' : ''}</span>
+        <span className="text-emerald-600/70 text-[10px] ml-1">— {description}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[10px]">
-          <thead>
-            <tr className="bg-neutral-50 dark:bg-slate-900/50 text-neutral-500 dark:text-neutral-400 border-b border-neutral-100 dark:border-slate-800">
-              {keys.map(k => <th key={k} className="px-3 py-2 text-left font-black uppercase tracking-wider">{k}</th>)}
+          <thead><tr className="bg-emerald-100/60 text-emerald-700">{keys.map(k => <th key={k} className="px-2 py-1 text-left font-black uppercase tracking-wider">{k}</th>)}</tr></thead>
+          <tbody>{display.map((row, i) => (
+            <tr key={i} className="border-t border-emerald-100/60 hover:bg-emerald-50/50">
+              {keys.map(k => <td key={k} className="px-2 py-1 text-neutral-700 max-w-[120px] truncate">{String(row[k] ?? '')}</td>)}
             </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-50 dark:divide-slate-800/50">
-            {display.map((row, i) => (
-              <tr key={i} className="hover:bg-neutral-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                {keys.map(k => <td key={k} className="px-3 py-2 text-neutral-700 dark:text-slate-300 font-medium max-w-[150px] truncate">{String(row[k] ?? '—')}</td>)}
-              </tr>
-            ))}
-          </tbody>
+          ))}</tbody>
         </table>
       </div>
       {results.length > 5 && (
-        <button onClick={() => setShowAll(v => !v)} className="w-full py-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 border-t border-emerald-100 dark:border-emerald-900/30 transition-all">
-          {showAll ? 'Collapse List' : `View all ${results.length} records`}
+        <button onClick={() => setShowAll(v => !v)} className="w-full py-1.5 text-[10px] font-bold text-emerald-600 hover:bg-emerald-100/40 transition-colors">
+          {showAll ? 'Show less' : `Show all ${results.length}`}
         </button>
       )}
     </div>
@@ -668,107 +643,92 @@ export const AIAssistant = ({ isOpen, onClose }: { isOpen: boolean; onClose: () 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
         {/* AI-I01: Dynamic suggestions */}
-        <AnimatePresence>
-          {!hasContent && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-2 pt-2"
-            >
-              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 px-1">Try asking…</p>
-              {suggestions.map((s, i) => (
-                <button key={i} onClick={() => { setInput(s.text); inputRef.current?.focus(); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 bg-neutral-50 dark:bg-slate-900 hover:bg-primary-50 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs text-neutral-600 dark:text-slate-300 font-medium transition-all text-left">
-                  <span className="text-primary-500">{s.icon}</span>{s.text}
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {!hasContent && (
+          <div className="space-y-2 pt-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 px-1">Try asking…</p>
+            {suggestions.map((s, i) => (
+              <button key={i} onClick={() => { setInput(s.text); inputRef.current?.focus(); }}
+                className="w-full flex items-center gap-2 px-3 py-2 bg-neutral-50 dark:bg-slate-900 hover:bg-primary-50 border border-neutral-200 dark:border-slate-700 rounded-xl text-xs text-neutral-600 dark:text-slate-300 font-medium transition-all text-left">
+                <span className="text-primary-500">{s.icon}</span>{s.text}
+              </button>
+            ))}
+          </div>
+        )}
 
-        <AnimatePresence initial={false}>
-          {messages.map((msg, i) => (
-            <motion.div 
-              key={i} 
-              initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20, scale: 0.95 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 350, delay: i === messages.length - 1 ? 0 : 0 }}
-              className={cn("flex gap-2.5 group/msg", msg.role === 'user' ? "flex-row-reverse" : "flex-row")}
-            >
-              <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm",
-                msg.role === 'assistant' ? "bg-primary-50 dark:bg-primary-950 text-primary-600" : "bg-neutral-100 dark:bg-slate-800 text-neutral-600")}>
-                {msg.role === 'assistant' ? <Sparkles className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
-              </div>
+        {messages.map((msg, i) => (
+          <div key={i} className={cn("flex gap-2.5 group/msg", msg.role === 'user' ? "flex-row-reverse" : "flex-row")}>
+            <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+              msg.role === 'assistant' ? "bg-primary-50 dark:bg-primary-950 text-primary-600" : "bg-neutral-100 dark:bg-slate-800 text-neutral-600")}>
+              {msg.role === 'assistant' ? <Sparkles className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
+            </div>
 
-              <div className={cn("flex flex-col max-w-[84%]", msg.role === 'user' ? "items-end" : "items-start")}>
-                {(msg.content || msg.streamingRaw !== undefined) && (() => {
-                  const isStreaming = msg.streamingRaw !== undefined;
-                  let display = isStreaming ? (msg.streamingRaw || '') : msg.content;
-                  let rescuedAction = msg.action;
+            <div className={cn("flex flex-col max-w-[84%]", msg.role === 'user' ? "items-end" : "items-start")}>
+              {(msg.content || msg.streamingRaw !== undefined) && (() => {
+                const isStreaming = msg.streamingRaw !== undefined;
+                let display = isStreaming ? (msg.streamingRaw || '') : msg.content;
+                let rescuedAction = msg.action;
 
-                  // Rescue JSON that leaked into content
-                  if (!msg.action && msg.role === 'assistant' && !isStreaming && display.trimStart().startsWith('{')) {
-                    try {
-                      const fb = display.indexOf('{'); let depth = 0, end = -1;
-                      for (let ci = fb; ci < display.length; ci++) { if (display[ci] === '{') depth++; else if (display[ci] === '}') { depth--; if (depth === 0) { end = ci; break; } } }
-                      if (end !== -1) { const p = JSON.parse(display.substring(fb, end + 1)); if (typeof p?.message === 'string') { display = p.message; if (p.action?.type !== 'none') rescuedAction = p.action; } }
-                    } catch {}
-                  }
+                // Rescue JSON that leaked into content
+                if (!msg.action && msg.role === 'assistant' && !isStreaming && display.trimStart().startsWith('{')) {
+                  try {
+                    const fb = display.indexOf('{'); let depth = 0, end = -1;
+                    for (let ci = fb; ci < display.length; ci++) { if (display[ci] === '{') depth++; else if (display[ci] === '}') { depth--; if (depth === 0) { end = ci; break; } } }
+                    if (end !== -1) { const p = JSON.parse(display.substring(fb, end + 1)); if (typeof p?.message === 'string') { display = p.message; if (p.action?.type !== 'none') rescuedAction = p.action; } }
+                  } catch {}
+                }
 
-                  return (
-                    <div className="relative group/bubble w-full">
-                      <div className={cn("px-3 py-2 rounded-2xl text-xs leading-relaxed shadow-sm",
-                        msg.role === 'assistant' ? "bg-white dark:bg-slate-800 text-neutral-800 dark:text-slate-200 rounded-tl-sm border border-neutral-100 dark:border-slate-700/50" : "bg-primary-600 text-white rounded-tr-sm")}>
-                        {msg.role === 'assistant' ? renderMarkdown(display) : display}
-                        {isStreaming && <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 0.8 }} className="inline-block w-1 h-3 bg-primary-400 ml-0.5 align-middle" />}
-                        {msg.isThinking && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 opacity-60" />}
-                      </div>
-
-                      {/* AI-I06: Copy for assistant */}
-                      {msg.role === 'assistant' && !isStreaming && <CopyButton text={display} />}
-
-                      {/* AI-I06: Edit for user */}
-                      {msg.role === 'user' && (
-                        <button title="Edit" onClick={() => { setInput(msg.content); setMessages(p => p.filter((_, idx) => idx < i)); inputRef.current?.focus(); }}
-                          className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover/bubble:opacity-100 p-1 rounded-lg bg-neutral-100 dark:bg-slate-800 hover:bg-neutral-200 transition-all">
-                          <PenSquare className="w-3 h-3 text-neutral-400" />
-                        </button>
-                      )}
-
-                      {rescuedAction && rescuedAction !== msg.action && rescuedAction.type !== 'query_data' && (
-                        <ActionPlanCard action={rescuedAction} state="pending" onConfirm={() => { updateAt(i, { action: rescuedAction, actionState: 'pending', content: display }); setTimeout(() => handleConfirm(i), 50); }} onCancel={() => handleCancel(i)} />
-                      )}
+                return (
+                  <div className="relative group/bubble">
+                    <div className={cn("px-3 py-2 rounded-2xl text-xs leading-relaxed",
+                      msg.role === 'assistant' ? "bg-neutral-100 dark:bg-slate-800 text-neutral-800 dark:text-slate-200 rounded-tl-sm" : "bg-primary-600 text-white rounded-tr-sm shadow-sm")}>
+                      {msg.role === 'assistant' ? renderMarkdown(display) : display}
+                      {isStreaming && <span className="inline-block w-1.5 h-3 bg-current animate-pulse ml-0.5 align-middle opacity-70" />}
+                      {msg.isThinking && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 opacity-60" />}
                     </div>
-                  );
-                })()}
 
-                {msg.action && msg.actionState && msg.action.type !== 'query_data' && (
-                  <ActionPlanCard
-                    action={msg.action} state={msg.actionState} result={msg.actionResult}
-                    executionProgress={msg.executionProgress}
-                    undoEntry={msg.undoKey && undoKeys.has(msg.undoKey) ? (undoStackRef.current.get(msg.undoKey) ?? null) : null}
-                    onConfirm={() => handleConfirm(i)} onCancel={() => handleCancel(i)}
-                    onUndo={msg.undoKey ? () => handleUndo(msg.undoKey!, i) : undefined}
-                  />
-                )}
-                {msg.queryResults && msg.role === 'assistant' && <QueryResultsCard results={msg.queryResults} description={msg.action?.payload?.description || ''} />}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+                    {/* AI-I06: Copy for assistant */}
+                    {msg.role === 'assistant' && !isStreaming && <CopyButton text={display} />}
+
+                    {/* AI-I06: Edit for user */}
+                    {msg.role === 'user' && (
+                      <button title="Edit" onClick={() => { setInput(msg.content); setMessages(p => p.filter((_, idx) => idx < i)); inputRef.current?.focus(); }}
+                        className="absolute -left-7 top-1/2 -translate-y-1/2 opacity-0 group-hover/bubble:opacity-100 p-1 rounded-lg bg-neutral-100 hover:bg-neutral-200 transition-all">
+                        <PenSquare className="w-3 h-3 text-neutral-400" />
+                      </button>
+                    )}
+
+                    {rescuedAction && rescuedAction !== msg.action && rescuedAction.type !== 'query_data' && (
+                      <ActionPlanCard action={rescuedAction} state="pending" onConfirm={() => { updateAt(i, { action: rescuedAction, actionState: 'pending', content: display }); setTimeout(() => handleConfirm(i), 50); }} onCancel={() => handleCancel(i)} />
+                    )}
+                  </div>
+                );
+              })()}
+
+              {msg.action && msg.actionState && msg.action.type !== 'query_data' && (
+                <ActionPlanCard
+                  action={msg.action} state={msg.actionState} result={msg.actionResult}
+                  executionProgress={msg.executionProgress}
+                  undoEntry={msg.undoKey && undoKeys.has(msg.undoKey) ? (undoStackRef.current.get(msg.undoKey) ?? null) : null}
+                  onConfirm={() => handleConfirm(i)} onCancel={() => handleCancel(i)}
+                  onUndo={msg.undoKey ? () => handleUndo(msg.undoKey!, i) : undefined}
+                />
+              )}
+              {msg.queryResults && msg.role === 'assistant' && <QueryResultsCard results={msg.queryResults} description={msg.action?.payload?.description || ''} />}
+            </div>
+          </div>
+        ))}
 
         {isLoading && !messages[messages.length - 1]?.streamingRaw && messages[messages.length - 1]?.streamingRaw !== '' && (
-          <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="flex gap-2.5">
-            <div className="w-7 h-7 rounded-full bg-primary-50 dark:bg-primary-900/30 text-primary-600 flex items-center justify-center shrink-0"><Sparkles className="w-3.5 h-3.5" /></div>
-            <div className="bg-white dark:bg-slate-800 border border-neutral-100 dark:border-slate-700 px-3 py-2 rounded-2xl rounded-tl-sm flex items-center gap-2 max-w-xs shadow-sm">
+          <div className="flex gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-primary-50 text-primary-600 flex items-center justify-center shrink-0"><Sparkles className="w-3.5 h-3.5" /></div>
+            <div className="bg-neutral-100 dark:bg-slate-800 px-3 py-2 rounded-2xl rounded-tl-sm flex items-center gap-2 max-w-xs">
               {retryState ? (
-                <><div className="relative w-5 h-5 shrink-0"><svg className="w-5 h-5 -rotate-90" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="#e5e7eb" strokeWidth="2.5"/><circle cx="10" cy="10" r="8" fill="none" stroke="var(--color-primary, #1A56DB)" strokeWidth="2.5" strokeDasharray={`${2*Math.PI*8}`} strokeDashoffset={`${2*Math.PI*8*(1-retryState.countdown/retryState.total)}`} strokeLinecap="round" style={{transition:'stroke-dashoffset 1s linear'}}/></svg><span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-primary-600">{retryState.countdown}</span></div><div><p className="text-xs font-black text-neutral-800 dark:text-white leading-tight uppercase tracking-tight">Retrying</p><p className="text-[9px] text-neutral-400 font-bold">Attempt {retryState.attempt}/4</p></div></>
+                <><div className="relative w-5 h-5 shrink-0"><svg className="w-5 h-5 -rotate-90" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="#e5e7eb" strokeWidth="2.5"/><circle cx="10" cy="10" r="8" fill="none" stroke="#1A56DB" strokeWidth="2.5" strokeDasharray={`${2*Math.PI*8}`} strokeDashoffset={`${2*Math.PI*8*(1-retryState.countdown/retryState.total)}`} strokeLinecap="round" style={{transition:'stroke-dashoffset 1s linear'}}/></svg><span className="absolute inset-0 flex items-center justify-center text-[8px] font-black text-primary-600">{retryState.countdown}</span></div><div><p className="text-xs font-semibold text-neutral-700 leading-tight">Rate limit — retrying</p><p className="text-[10px] text-neutral-400">Attempt {retryState.attempt}/4</p></div></>
               ) : (
-                <><div className="flex gap-1"><motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="w-1.5 h-1.5 rounded-full bg-primary-400" /><motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 rounded-full bg-primary-500" /><motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 rounded-full bg-primary-600" /></div><span className="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">{loadingStatus}</span></>
+                <><Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-400 shrink-0" /><span className="text-xs text-neutral-400">{loadingStatus}</span></>
               )}
             </div>
-          </motion.div>
+          </div>
         )}
 
         {!isLoading && pendingRetryMessage && (

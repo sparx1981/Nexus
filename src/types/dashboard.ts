@@ -8,11 +8,14 @@ export interface DashboardCard {
     config: {
         fieldX?: string;
         fieldY?: string;
-        operation?: 'sum' | 'count' | 'avg' | 'min' | 'max';
+        fieldB?: string;
+        operation?: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'days_since' | 'days_between';
         color?: string;
         kpiField?: string;
+        kpiOperation?: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'days_since' | 'days_between';
         tableFields?: string[];
         showTrend?: boolean;
+        headerBg?: string;
     };
     position?: { x: number; y: number; w: number; h: number };
 }
@@ -22,8 +25,14 @@ export interface Dashboard {
     workspaceId: string;
     name: string;
     description?: string;
-    published?: boolean;
     cards: DashboardCard[];
     createdAt: any;
     updatedAt?: any;
+    isPublished?: boolean;
+    publishedVersion?: {
+        name: string;
+        description?: string;
+        cards: DashboardCard[];
+        publishedAt: any;
+    };
 }

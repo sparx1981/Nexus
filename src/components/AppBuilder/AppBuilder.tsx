@@ -349,7 +349,7 @@ export function AppBuilder({ onEditingAppChange }: { onEditingAppChange?: (id: s
             case 'heading': return { text: 'Heading', size: 'h1' };
             case 'text': return { text: 'Paragraph text content...' };
             case 'button': return { label: 'Click Me', style: 'primary', actionType: 'submit' };
-            case 'input': return { label: 'Field Label', placeholder: 'Enter value...', required: false };
+            case 'input': return { label: 'Field Label', placeholder: 'Enter value...', required: false, calculated: false, calculationFormula: '' };
             case 'select': return { label: 'Dropdown', options: [{ value: '1', label: 'Option 1' }, { value: '2', label: 'Option 2' }] };
             case 'toggle': return { label: 'Toggle', options: ['On', 'Off'] };
             case 'table': return { dataSource: '' };
@@ -2377,6 +2377,25 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
       return [];
     }, [dataSourceId, tables, restApiConnectors]);
 
+    // Fields for dropdown options table mode
+    const optionsFields = useMemo(() => {
+      const targetId = selectedComponent?.properties?.optionsTableId;
+      if (!targetId) return [];
+      const table = tables.find(t => t.id === targetId);
+      if (table) return table.fields;
+      
+      const api = restApiConnectors.find(c => c.id === targetId);
+      if (api && api.schema) {
+        try {
+            const schemaObj = typeof api.schema === 'string' ? JSON.parse(api.schema) : api.schema;
+            return schemaObj.fields || [];
+        } catch (e) {
+            return [];
+        }
+      }
+      return [];
+    }, [selectedComponent?.properties?.optionsTableId, tables, restApiConnectors]);
+
     if (!selectedComponent) {
         return (
             <div className="flex-1 flex flex-col">
@@ -2835,6 +2854,61 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                          properties.readOnly ? "ml-5" : "ml-0"
                                      )}></div>
                                  </button>
+                             </div>
+
+                             <div className="pt-2 mt-2 border-t border-neutral-100">
+                                 <div className="flex items-center justify-between mb-2">
+                                     <div>
+                                         <label className="text-[11px] font-bold text-neutral-900">Calculated</label>
+                                         <p className="text-[9px] text-neutral-400">Derive value from other fields</p>
+                                     </div>
+                                     <button 
+                                         onClick={() => handleUpdate('calculated', !properties.calculated)}
+                                         className={cn(
+                                             "w-10 h-5 rounded-full transition-all relative p-1 shrink-0",
+                                             properties.calculated ? "bg-blue-600" : "bg-neutral-200"
+                                         )}
+                                     >
+                                         <div className={cn(
+                                             "w-3 h-3 bg-white rounded-full transition-all",
+                                             properties.calculated ? "ml-5" : "ml-0"
+                                         )}></div>
+                                     </button>
+                                 </div>
+                                 
+                                 {properties.calculated && (
+                                     <div className="space-y-4 animate-in slide-in-from-top-2 duration-200">
+                                         <div className="space-y-1.5">
+                                             <label className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Calculation Formula</label>
+                                             <textarea 
+                                                 value={properties.calculationFormula || ''}
+                                                 onChange={(e) => handleUpdate('calculationFormula', e.target.value)}
+                                                 placeholder="e.g. {{price}} * {{quantity}}"
+                                                 className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-blue-600/20 resize-none min-h-[60px]"
+                                             />
+                                             <div className="p-2 bg-blue-50 rounded-lg border border-blue-100">
+                                                 <p className="text-[9px] text-blue-600 leading-relaxed italic">
+                                                     Use <strong>{"{{field_name}}"}</strong> to reference other inputs. Basic math (+, -, *, /) is supported.
+                                                 </p>
+                                             </div>
+                                         </div>
+
+                                         <div className="space-y-2">
+                                             <label className="text-[9px] font-bold text-neutral-400 uppercase">Available Variables (App Fields)</label>
+                                             <div className="flex flex-wrap gap-1">
+                                                 {availableFields.map(f => (
+                                                     <button 
+                                                         key={f.id}
+                                                         onClick={() => handleUpdate('calculationFormula', (properties.calculationFormula || '') + `{{${f.name}}}`)}
+                                                         className="px-2 py-0.5 bg-white border border-neutral-200 rounded text-[9px] text-neutral-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+                                                     >
+                                                         {f.name}
+                                                     </button>
+                                                 ))}
+                                             </div>
+                                         </div>
+                                     </div>
+                                 )}
                              </div>
                          </>
                      )}
@@ -3382,12 +3456,13 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                          onChange={(e) => handleUpdate('optionsTableId', e.target.value)}
                                          className="w-full px-2 py-1.5 bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded-lg text-xs outline-none dark:text-white"
                                      >
-                                         <option value="">Select table…</option>
-                                         {availableFields && currentAppData?.dataSourceId
-                                             ? [{ id: currentAppData.dataSourceId, name: 'Current Table' }].concat(
-                                                 (window as any).__nexusTables?.filter((t: any) => t.id !== currentAppData.dataSourceId) || []
-                                               ).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)
-                                             : null}
+                                         <option value="">Select datasource…</option>
+                                         {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                                         {restApiConnectors.filter(c => (c.method || 'GET') === 'GET').length > 0 && (
+                                             <optgroup label="REST APIs (GET)">
+                                                 {restApiConnectors.filter(c => (c.method || 'GET') === 'GET').map(c => <option key={c.id} value={c.id}>{c.name} (API)</option>)}
+                                             </optgroup>
+                                         )}
                                      </select>
                                      {properties.optionsTableId && (
                                          <>
@@ -3400,7 +3475,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                                          className="w-full px-2 py-1 bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded text-xs outline-none dark:text-white"
                                                      >
                                                          <option value="">Select field…</option>
-                                                         {availableFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
+                                                         {optionsFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
                                                      </select>
                                                  </div>
                                                  <div>
@@ -3411,7 +3486,7 @@ function PropertiesPanel({ dataSourceId, unifiedDatasources, currentAppData }: {
                                                          className="w-full px-2 py-1 bg-white dark:bg-slate-700 border border-neutral-200 dark:border-slate-600 rounded text-xs outline-none dark:text-white"
                                                      >
                                                          <option value="">Select field…</option>
-                                                         {availableFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
+                                                         {optionsFields.map((f: any) => <option key={f.id} value={f.name}>{f.name}</option>)}
                                                      </select>
                                                  </div>
                                              </div>

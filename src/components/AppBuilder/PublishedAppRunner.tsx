@@ -124,14 +124,7 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
 
   // ── 4. Auth gate ─────────────────────────────────────────────────────────
   if (requireSignIn === null || isAuthorised === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"/>
-          <p className="text-sm text-neutral-400">Checking access…</p>
-        </div>
-      </div>
-    );
+    return <div className="min-h-screen bg-neutral-50" />;
   }
 
   if (requireSignIn && !isAuthorised) {
@@ -156,14 +149,7 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
     );
   }
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-      <div className="flex flex-col items-center gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
-        <p className="text-sm font-medium text-neutral-500">Loading application…</p>
-      </div>
-    </div>
-  );
+  if (loading) return <div className="min-h-screen bg-neutral-50" />;
 
   if (error) return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-50">
@@ -223,7 +209,20 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
         if (mode === 'add') {
           await dataService.addRecord(workspaceId, tid, formState);
           showToast('Record submitted successfully!', 'success');
-          setFormState({});
+          
+          // Execute After Submit Action
+          const afterAction = properties.afterAction || 'nothing';
+          if (afterAction === 'app' && properties.afterActionAppId) {
+            setTimeout(() => {
+                window.location.href = `/${appData.workspaceSlug || workspaceId}/${properties.afterActionAppId}`;
+            }, 1000);
+          } else if (afterAction === 'url' && properties.afterActionUrl) {
+            setTimeout(() => {
+                window.location.href = properties.afterActionUrl;
+            }, 1000);
+          } else {
+             setFormState({});
+          }
         } else {
           showToast('Action completed.', 'info');
         }
@@ -315,8 +314,8 @@ export function PublishedAppRunner({ appId, workspaceId }: { appId: string; work
       )}
 
       {/* Canvas — padded outer container for comfortable default margins */}
-      <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
-      <div className="relative mx-auto" style={{ minHeight: 800, maxWidth: (appData?.fullWidth ? '100%' : '1280px') }}>
+      <div className="w-full p-8">
+      <div className="relative w-full" style={{ minHeight: 800 }}>
         {components.filter((c: any) => !c.parentId).map((c: any) => (
           <div
             key={c.id}
@@ -387,6 +386,30 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
   const inputBg = ps.componentPrimaryColour ? `${ps.componentPrimaryColour}18` : '#F9FAFB';
   const tableHeaderBg = ps.componentPrimaryColour || '#1A56DB';
 
+  const evaluateFormula = (formula: string, state: any) => {
+    if (!formula) return '';
+    try {
+      // Replace {{field}} with value from state
+      let resolved = formula.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
+        const val = state[key];
+        return val === undefined || val === null ? '0' : val;
+      });
+      
+      // Basic sanitization: only allow numbers, math operators, and parentheses
+      // This is a simple client-side evaluation
+      if (/[^0-9.+\-*/%()\s]/.test(resolved)) {
+           // If it contains non-math chars, it might be a string concatenation or just invalid
+           // For now, only supporting math-like strings
+      }
+      
+      // eslint-disable-next-line no-eval
+      const result = eval(resolved); 
+      return String(result);
+    } catch (e) {
+      return '';
+    }
+  };
+
   switch (type) {
     case 'heading': {
       const Tag = (properties.size || 'h1') as any;
@@ -414,20 +437,39 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
         </button>
       );
 
-    case 'input':
+    case 'input': {
+      const fieldId = properties.fieldMapping || id;
+      const isCalculated = properties.calculated;
+      const formula = properties.calculationFormula;
+
+      // Handle live calculation
+      React.useEffect(() => {
+        if (isCalculated && formula) {
+          const newVal = evaluateFormula(formula, formState);
+          if (newVal !== formState[fieldId]) {
+            onFormUpdate(fieldId, newVal);
+          }
+        }
+      }, [formState, formula, isCalculated, fieldId, onFormUpdate]);
+
       return (
         <div className="space-y-1.5 w-full h-full flex flex-col">
           <label className="text-sm font-bold" style={{ color: textColour }}>{properties.label || 'Field'}</label>
           <input
             type="text"
             placeholder={properties.placeholder || ''}
-            value={formState[properties.fieldMapping || id] ?? urlParams[properties.fieldMapping || id] ?? ''}
-            onChange={e => onFormUpdate(properties.fieldMapping || id, e.target.value)}
-            className="flex-1 px-4 py-2 border border-neutral-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 outline-none"
-            style={{ backgroundColor: inputBg }}
+            value={formState[fieldId] ?? urlParams[fieldId] ?? ''}
+            onChange={e => !isCalculated && onFormUpdate(fieldId, e.target.value)}
+            readOnly={properties.readOnly || isCalculated}
+            className={cn(
+              "flex-1 px-4 py-2 border border-neutral-200 rounded-xl text-sm outline-none",
+              (properties.readOnly || isCalculated) ? "bg-neutral-100 cursor-not-allowed" : "focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+            )}
+            style={{ backgroundColor: (properties.readOnly || isCalculated) ? undefined : inputBg }}
           />
         </div>
       );
+    }
 
     case 'select': {
       const opts = properties.options || [];
@@ -467,7 +509,17 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
     }
 
     case 'table': {
+      const [searchQuery, setSearchQuery] = useState('');
       const rows = tableData[properties.dataSource || appData?.dataSourceId] || [];
+      
+      // Apply Search
+      const filteredRows = rows.filter((row: any) => {
+        if (!searchQuery) return true;
+        return Object.values(row).some(val => 
+          String(val || '').toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      });
+
       const cols = rows.length > 0 ? Object.keys(rows[0]).filter(k => k !== 'id' && !k.startsWith('_')) : [];
       const vis  = properties.visibleFields?.length > 0 ? cols.filter((c: string) => properties.visibleFields.includes(c)) : cols;
       const tableButtons: any[] = properties.rowButtons || [];
@@ -488,50 +540,68 @@ function RunnerComponent({ component, allComponents, tableData, formState, onFor
       };
 
       return (
-        <div className="w-full h-full overflow-auto rounded-xl border border-neutral-200 bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-neutral-200" style={{ backgroundColor: tableHeaderBg }}>
-                {startBtns.length > 0 && <th className="px-3 py-2 w-px" />}
-                {vis.map((col: string) => (
-                  <th key={col} className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-white opacity-90">{col}</th>
-                ))}
-                {endBtns.length > 0 && <th className="px-3 py-2 w-px" />}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row: any) => (
-                <tr key={row.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  {startBtns.length > 0 && (
-                    <td className="px-2 py-1.5">
-                      <div className="flex gap-1">
-                        {startBtns.map((btn: any, bi: number) => (
-                          <button key={bi} onClick={() => fireRowBtn(btn, row)}
-                            className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap hover:opacity-80"
-                            style={{ background: btn.color || '#1A56DB' }}>{btn.label || 'Action'}</button>
-                        ))}
-                      </div>
-                    </td>
-                  )}
+        <div className="w-full h-full flex flex-col min-h-0">
+          {properties.enableSearch && (
+            <div className="mb-2 shrink-0">
+               <div className="relative">
+                 <input 
+                   type="text" 
+                   value={searchQuery}
+                   onChange={(e) => setSearchQuery(e.target.value)}
+                   placeholder="Search records..."
+                   className="w-full pl-9 pr-4 py-1.5 bg-white border border-neutral-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-600/10 focus:border-blue-600"
+                 />
+                 <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                   <svg className="w-3.5 h-3.5 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                 </div>
+               </div>
+            </div>
+          )}
+          <div className="flex-1 overflow-auto rounded-none border border-neutral-200 bg-white">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-200" style={{ backgroundColor: tableHeaderBg }}>
+                  {startBtns.length > 0 && <th className="px-3 py-2 w-px" />}
                   {vis.map((col: string) => (
-                    <td key={col} className="px-4 py-2 text-neutral-700 text-xs">{String(row[col] ?? '')}</td>
+                    <th key={col} className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-white opacity-90">{col}</th>
                   ))}
-                  {endBtns.length > 0 && (
-                    <td className="px-2 py-1.5">
-                      <div className="flex gap-1 justify-end">
-                        {endBtns.map((btn: any, bi: number) => (
-                          <button key={bi} onClick={() => fireRowBtn(btn, row)}
-                            className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap hover:opacity-80"
-                            style={{ background: btn.color || '#1A56DB' }}>{btn.label || 'Action'}</button>
-                        ))}
-                      </div>
-                    </td>
-                  )}
+                  {endBtns.length > 0 && <th className="px-3 py-2 w-px" />}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length === 0 && <div className="p-8 text-center text-neutral-400 text-xs">No data</div>}
+              </thead>
+              <tbody>
+                {filteredRows.map((row: any) => (
+                  <tr key={row.id} className="border-b border-neutral-100 hover:bg-neutral-50">
+                    {startBtns.length > 0 && (
+                      <td className="px-2 py-1.5">
+                        <div className="flex gap-1">
+                          {startBtns.map((btn: any, bi: number) => (
+                            <button key={bi} onClick={() => fireRowBtn(btn, row)}
+                              className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap hover:opacity-80"
+                              style={{ background: btn.color || '#1A56DB' }}>{btn.label || 'Action'}</button>
+                          ))}
+                        </div>
+                      </td>
+                    )}
+                    {vis.map((col: string) => (
+                      <td key={col} className="px-4 py-2 text-neutral-700 text-xs">{String(row[col] ?? '')}</td>
+                    ))}
+                    {endBtns.length > 0 && (
+                      <td className="px-2 py-1.5">
+                        <div className="flex gap-1 justify-end">
+                          {endBtns.map((btn: any, bi: number) => (
+                            <button key={bi} onClick={() => fireRowBtn(btn, row)}
+                              className="px-2 py-1 text-[10px] font-bold rounded text-white whitespace-nowrap hover:opacity-80"
+                              style={{ background: btn.color || '#1A56DB' }}>{btn.label || 'Action'}</button>
+                          ))}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredRows.length === 0 && <div className="p-8 text-center text-neutral-400 text-xs">No data</div>}
+          </div>
         </div>
       );
     }

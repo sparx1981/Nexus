@@ -1,7 +1,10 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Save, Plus, FileText, Settings2, Trash2, X, Type, Table as TableIcon, BarChart3, Image as ImageIcon, Download, GripHorizontal, Maximize2 } from 'lucide-react';
+import { ArrowLeft, Save, Plus, FileText, Settings2, Trash2, X, Type, Table as TableIcon, BarChart3, Image as ImageIcon, Download, GripHorizontal, Maximize2, Database, TrendingUp, PieChart as PieIcon, Hash } from 'lucide-react';
 import { Report, useReportStore, ReportElement } from '../../store/reportStore';
 import { cn } from '../../lib/utils';
+import { useSchemaStore } from '../../store/schemaStore';
+import { DashboardCard } from '../Dashboards/DashboardCard';
+import { DashboardCard as ICard } from '../../types/dashboard';
 
 interface ReportDesignerProps {
     report: Report;
@@ -85,28 +88,53 @@ function ReportElementWrapper({ element, isSelected, onSelect, onDelete, onLayou
 function ElementContent({ element, onChange }: { element: ReportElement; onChange: (c: any) => void }) {
     const [editing, setEditing] = useState(false);
     if (element.type === 'text') {
+        const style = element.content.style || {};
+        const textStyle = {
+            fontSize: style.fontSize ? `${style.fontSize}px` : '14px',
+            fontStyle: style.fontStyle === 'italic' ? 'italic' : 'normal',
+            fontWeight: style.fontStyle === 'bold' ? '900' : '500',
+            color: style.fontColor || 'inherit',
+        };
+
         return editing ? (
-            <textarea autoFocus value={typeof element.content === 'string' ? element.content : ''}
-                onChange={(e) => onChange(e.target.value)} onBlur={() => setEditing(false)}
-                className="w-full h-full p-3 text-sm font-medium text-neutral-700 dark:text-neutral-300 leading-relaxed bg-transparent outline-none resize-none border-none" />
+            <textarea autoFocus value={typeof element.content === 'string' ? element.content : (element.content.text || '')}
+                onChange={(e) => onChange(typeof element.content === 'string' ? e.target.value : { ...element.content, text: e.target.value })} 
+                onBlur={() => setEditing(false)}
+                style={textStyle}
+                className="w-full h-full p-4 leading-relaxed bg-transparent outline-none resize-none border-none dark:text-neutral-300" />
         ) : (
             <div onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }}
-                className="w-full h-full p-3 text-sm font-medium text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap cursor-text select-text"
+                style={textStyle}
+                className="w-full h-full p-4 leading-relaxed whitespace-pre-wrap cursor-text select-text"
                 title="Double-click to edit">
-                {typeof element.content === 'string' ? element.content : 'Text element — double-click to edit'}
+                {typeof element.content === 'string' ? element.content : (element.content.text || 'Text element — double-click to edit')}
             </div>
         );
     }
-    if (element.type === 'table') return (
-        <div className="w-full h-full rounded-lg border border-neutral-100 dark:border-neutral-800 flex flex-col items-center justify-center text-neutral-400 font-bold uppercase text-[10px] tracking-widest bg-neutral-50/50 dark:bg-black/20 gap-2">
-            <TableIcon className="w-6 h-6 opacity-40" /><span>Data Grid</span>
-        </div>
-    );
-    if (element.type === 'chart') return (
-        <div className="w-full h-full rounded-xl border border-neutral-100 dark:border-neutral-800 flex flex-col items-center justify-center text-neutral-400 font-bold uppercase text-[10px] tracking-widest bg-neutral-50 dark:bg-black/20 gap-2">
-            <BarChart3 className="w-6 h-6 opacity-40" /><span>Visualization</span>
-        </div>
-    );
+    if (element.type === 'table' || element.type === 'chart') {
+        const card: ICard = {
+            id: element.id,
+            type: element.type === 'table' ? 'table' : (element.content.type || 'bar'),
+            title: element.content.title || '',
+            dataSourceId: element.content.dataSourceId || '',
+            config: element.content.config || {}
+        };
+        
+        if (!card.dataSourceId) {
+            return (
+                <div className="w-full h-full rounded-lg border border-neutral-100 dark:border-neutral-800 flex flex-col items-center justify-center text-neutral-400 font-bold uppercase text-[10px] tracking-widest bg-neutral-50/50 dark:bg-black/20 gap-2">
+                    {element.type === 'table' ? <TableIcon className="w-6 h-6 opacity-40" /> : <BarChart3 className="w-6 h-6 opacity-40" />}
+                    <span>Select Data Source</span>
+                </div>
+            );
+        }
+
+        return (
+            <div className="w-full h-full bg-white dark:bg-black p-2 rounded-lg overflow-hidden">
+                <DashboardCard card={card} />
+            </div>
+        );
+    }
     if (element.type === 'image') return (
         <div className="w-full h-full rounded-xl border-2 border-dashed border-neutral-200 dark:border-neutral-700 flex flex-col items-center justify-center text-neutral-400 font-bold uppercase text-[10px] tracking-widest gap-2">
             <ImageIcon className="w-6 h-6 opacity-40" /><span>Image Placeholder</span>
@@ -117,6 +145,8 @@ function ElementContent({ element, onChange }: { element: ReportElement; onChang
 
 export const ReportDesigner = ({ report, onClose }: ReportDesignerProps) => {
     const { updateReport } = useReportStore();
+    const { tables, restApiConnectors } = useSchemaStore();
+    const getApis = restApiConnectors.filter((c: any) => c.method === 'GET');
     const [editingElementId, setEditingElementId] = useState<string | null>(null);
     const [exportingPdf, setExportingPdf] = useState(false);
 
@@ -126,7 +156,9 @@ export const ReportDesigner = ({ report, onClose }: ReportDesignerProps) => {
         const n = report.elements.length;
         const el: ReportElement = {
             id: `el_${Date.now()}`, type,
-            content: type === 'text' ? 'Double-click to edit this text element.' : {},
+            content: type === 'text' 
+                ? { text: 'Double-click to edit this text element.', style: { fontSize: 14, fontStyle: 'normal', fontColor: '#111827' } } 
+                : (type === 'table' || type === 'chart' ? { dataSourceId: '', config: {}, title: `New ${type}`, type: type === 'chart' ? 'bar' : 'table' } : {}),
             layout: { x: 20 + (n % 3) * 10, y: 20 + n * 30, w: type === 'text' ? 500 : type === 'table' ? 680 : 460, h: type === 'text' ? 80 : type === 'table' ? 200 : 180 }
         };
         updateReport(report.id, { elements: [...report.elements, el] });
@@ -136,6 +168,10 @@ export const ReportDesigner = ({ report, onClose }: ReportDesignerProps) => {
     const handleDeleteElement = (id: string) => {
         updateReport(report.id, { elements: report.elements.filter(e => e.id !== id) });
         if (editingElementId === id) setEditingElementId(null);
+    };
+
+    const handleUpdateElementContent = (id: string, updates: any) => {
+        updateReport(report.id, { elements: report.elements.map(el => el.id === id ? { ...el, content: { ...el.content, ...updates } } : el) });
     };
 
     const handleLayoutChange = useCallback((id: string, layout: { x: number; y: number; w: number; h: number }) => {
@@ -233,7 +269,169 @@ export const ReportDesigner = ({ report, onClose }: ReportDesignerProps) => {
                                 <button onClick={() => setEditingElementId(null)} className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md"><X className="w-4 h-4 text-neutral-400" /></button>
                             </div>
                             <div className="p-5 space-y-5 flex-1 overflow-y-auto">
-                                <div className="space-y-2">
+                                {(editingElement.type === 'table' || editingElement.type === 'chart') && (
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-neutral-500 uppercase">Data Source</label>
+                                            <select 
+                                                value={editingElement.content.dataSourceId || ''}
+                                                onChange={(e) => handleUpdateElementContent(editingElement.id, { dataSourceId: e.target.value })}
+                                                className="w-full px-4 py-2 bg-neutral-50 dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-xl text-xs font-bold outline-none dark:text-white"
+                                            >
+                                                <option value="">Choose data source...</option>
+                                                {tables.length > 0 && <optgroup label="Tables">{tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}
+                                                {getApis.length > 0 && <optgroup label="REST APIs (GET)">{getApis.map((c: any) => <option key={c.id} value={c.id}>{c.name} (API)</option>)}</optgroup>}
+                                            </select>
+                                        </div>
+
+                                        {editingElement.type === 'chart' && (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-neutral-500 uppercase">Chart Type</label>
+                                                <div className="flex bg-neutral-100 dark:bg-neutral-900 p-1 rounded-xl border border-neutral-200 dark:border-neutral-800 gap-1">
+                                                    {[
+                                                        { type: 'bar', icon: <BarChart3 className="w-3.5 h-3.5" />, label: 'Bar' },
+                                                        { type: 'line', icon: <TrendingUp className="w-3.5 h-3.5" />, label: 'Line' },
+                                                        { type: 'pie', icon: <PieIcon className="w-3.5 h-3.5" />, label: 'Pie' },
+                                                        { type: 'kpi', icon: <Hash className="w-3.5 h-3.5" />, label: 'KPI' },
+                                                    ].map((t) => (
+                                                        <button
+                                                            key={t.type}
+                                                            onClick={() => handleUpdateElementContent(editingElement.id, { type: t.type })}
+                                                            className={cn(
+                                                                "flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                                                                editingElement.content.type === t.type ? "bg-white dark:bg-black text-primary-600 shadow-sm" : "text-neutral-400 hover:text-neutral-600"
+                                                            )}
+                                                        >
+                                                            {t.icon}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {editingElement.content.dataSourceId && (
+                                            <div className="p-4 bg-primary-50/30 dark:bg-primary-950/20 rounded-2xl border border-primary-100 dark:border-primary-900/30 space-y-4">
+                                                 {editingElement.content.type !== 'table' && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase">Dimension (X-Axis)</label>
+                                                        <select 
+                                                            value={editingElement.content.config?.fieldX || ''}
+                                                            onChange={(e) => handleUpdateElementContent(editingElement.id, { config: { ...editingElement.content.config, fieldX: e.target.value } })}
+                                                            className="w-full px-3 py-2 bg-white dark:bg-black border border-primary-100 dark:border-primary-900/30 rounded-xl text-[10px] font-bold outline-none dark:text-white"
+                                                        >
+                                                            <option value="">Select dimension...</option>
+                                                            {tables.find(t => t.id === editingElement.content.dataSourceId)?.fields.map(f => (
+                                                                <option key={f.id} value={f.name}>{f.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {editingElement.content.type === 'table' && (
+                                                    <div className="space-y-4 pt-2">
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase">Header Colour</label>
+                                                            <div className="flex gap-1.5 flex-wrap">
+                                                                {['#1A56DB', '#059669', '#D97706', '#DC2626', '#7C3AED', '#000000'].map(c => (
+                                                                    <button 
+                                                                        key={c}
+                                                                        onClick={() => handleUpdateElementContent(editingElement.id, { config: { ...editingElement.content.config, headerBg: c } })}
+                                                                        className={cn(
+                                                                            "w-6 h-6 rounded-full border-2 transition-transform hover:scale-110",
+                                                                            editingElement.content.config?.headerBg === c ? "border-primary-500 scale-110" : "border-transparent"
+                                                                        )}
+                                                                        style={{ backgroundColor: c }}
+                                                                    />
+                                                                ))}
+                                                                <input 
+                                                                    type="color" 
+                                                                    value={editingElement.content.config?.headerBg || '#1A56DB'}
+                                                                    onChange={(e) => handleUpdateElementContent(editingElement.id, { config: { ...editingElement.content.config, headerBg: e.target.value } })}
+                                                                    className="w-6 h-6 rounded-full border-none p-0 bg-transparent cursor-pointer"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase">Show Fields</label>
+                                                            <div className="space-y-1 max-h-40 overflow-y-auto p-2 bg-white dark:bg-black border border-primary-100 dark:border-primary-900/30 rounded-xl">
+                                                                {tables.find(t => t.id === editingElement.content.dataSourceId)?.fields.map(f => {
+                                                                    const isChecked = editingElement.content.config?.tableFields?.includes(f.name);
+                                                                    return (
+                                                                        <label key={f.id} className="flex items-center gap-2 px-1 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900 rounded cursor-pointer transition-colors">
+                                                                            <input 
+                                                                                type="checkbox"
+                                                                                checked={!!isChecked}
+                                                                                onChange={(e) => {
+                                                                                    const currentFields = editingElement.content.config?.tableFields || [];
+                                                                                    const nextFields = e.target.checked 
+                                                                                        ? [...currentFields, f.name]
+                                                                                        : currentFields.filter((cf: string) => cf !== f.name);
+                                                                                    handleUpdateElementContent(editingElement.id, { config: { ...editingElement.content.config, tableFields: nextFields } });
+                                                                                }}
+                                                                                className="w-3 h-3 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                                                                            />
+                                                                            <span className="text-[9px] font-bold text-neutral-600 dark:text-neutral-400">{f.name}</span>
+                                                                        </label>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {editingElement.content.type !== 'table' && editingElement.content.type !== 'kpi' && editingElement.content.type !== 'pie' && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase">Measure (Y-Axis)</label>
+                                                        <select 
+                                                            value={editingElement.content.config?.fieldY || ''}
+                                                            onChange={(e) => handleUpdateElementContent(editingElement.id, { config: { ...editingElement.content.config, fieldY: e.target.value } })}
+                                                            className="w-full px-3 py-2 bg-white dark:bg-black border border-primary-100 dark:border-primary-900/30 rounded-xl text-[10px] font-bold outline-none dark:text-white"
+                                                        >
+                                                            <option value="">Select measure...</option>
+                                                            {tables.find(t => t.id === editingElement.content.dataSourceId)?.fields.map(f => (
+                                                                <option key={f.id} value={f.name}>{f.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                {editingElement.content.type === 'kpi' && (
+                                                     <div className="space-y-4">
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase">Aggregation</label>
+                                                            <select 
+                                                                value={editingElement.content.config?.kpiOperation || 'count'}
+                                                                onChange={(e) => handleUpdateElementContent(editingElement.id, { config: { ...editingElement.content.config, kpiOperation: e.target.value as any } })}
+                                                                className="w-full px-3 py-2 bg-white dark:bg-black border border-primary-100 dark:border-primary-900/30 rounded-xl text-[10px] font-bold outline-none dark:text-white"
+                                                            >
+                                                                <option value="count">COUNT</option>
+                                                                <option value="sum">SUM</option>
+                                                                <option value="avg">AVERAGE</option>
+                                                                <option value="max">MAX</option>
+                                                                <option value="min">MIN</option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase">Value Field</label>
+                                                            <select 
+                                                                value={editingElement.content.config?.kpiField || ''}
+                                                                onChange={(e) => handleUpdateElementContent(editingElement.id, { config: { ...editingElement.content.config, kpiField: e.target.value } })}
+                                                                className="w-full px-3 py-2 bg-white dark:bg-black border border-primary-100 dark:border-primary-900/30 rounded-xl text-[10px] font-bold outline-none dark:text-white"
+                                                            >
+                                                                <option value="">No field (Count records)</option>
+                                                                {tables.find(t => t.id === editingElement.content.dataSourceId)?.fields.map(f => (
+                                                                    <option key={f.id} value={f.name}>{f.name}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                     </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="space-y-2 pt-4 border-t border-neutral-100 dark:border-neutral-900">
                                     <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Position & Size</label>
                                     <div className="grid grid-cols-2 gap-2">
                                         {(['x', 'y', 'w', 'h'] as const).map(prop => (
@@ -247,12 +445,53 @@ export const ReportDesigner = ({ report, onClose }: ReportDesignerProps) => {
                                     </div>
                                 </div>
                                 {editingElement.type === 'text' && (
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Text Content</label>
-                                        <textarea value={typeof editingElement.content === 'string' ? editingElement.content : ''}
-                                            onChange={(e) => updateReport(report.id, { elements: report.elements.map(el => el.id === editingElement.id ? { ...el, content: e.target.value } : el) })}
-                                            className="w-full h-40 p-3 bg-neutral-50 dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none dark:text-white resize-none"
-                                            placeholder="Enter report text here..." />
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Typography</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] font-black text-neutral-400 uppercase">Size (px)</label>
+                                                    <input type="number" 
+                                                        value={editingElement.content.style?.fontSize || 14}
+                                                        onChange={(e) => handleUpdateElementContent(editingElement.id, { style: { ...(editingElement.content.style || {}), fontSize: parseInt(e.target.value) || 14 } })}
+                                                        className="w-full px-2 py-1.5 text-xs bg-neutral-50 dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-lg outline-none font-mono" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] font-black text-neutral-400 uppercase">Style</label>
+                                                    <select 
+                                                        value={editingElement.content.style?.fontStyle || 'normal'}
+                                                        onChange={(e) => handleUpdateElementContent(editingElement.id, { style: { ...(editingElement.content.style || {}), fontStyle: e.target.value } })}
+                                                        className="w-full px-2 py-1.5 text-xs bg-neutral-50 dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-lg outline-none font-bold">
+                                                        <option value="normal">Normal</option>
+                                                        <option value="bold">Bold</option>
+                                                        <option value="italic">Italic</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] font-black text-neutral-400 uppercase">Colour</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="color" 
+                                                        value={editingElement.content.style?.fontColor || '#111827'}
+                                                        onChange={(e) => handleUpdateElementContent(editingElement.id, { style: { ...(editingElement.content.style || {}), fontColor: e.target.value } })}
+                                                        className="w-8 h-8 rounded-lg border-2 border-neutral-200 dark:border-neutral-800 bg-transparent p-0 cursor-pointer overflow-hidden" />
+                                                    <input type="text" 
+                                                        value={editingElement.content.style?.fontColor || '#111827'}
+                                                        onChange={(e) => handleUpdateElementContent(editingElement.id, { style: { ...(editingElement.content.style || {}), fontColor: e.target.value } })}
+                                                        className="flex-1 px-2 py-1.5 text-xs bg-neutral-50 dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-lg outline-none font-mono uppercase" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Text Content</label>
+                                            <textarea value={typeof editingElement.content === 'string' ? editingElement.content : (editingElement.content.text || '')}
+                                                onChange={(e) => {
+                                                    const val = typeof editingElement.content === 'string' ? e.target.value : { ...editingElement.content, text: e.target.value };
+                                                    updateReport(report.id, { elements: report.elements.map(el => el.id === editingElement.id ? { ...el, content: val } : el) });
+                                                }}
+                                                className="w-full h-40 p-3 bg-neutral-50 dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm outline-none dark:text-white resize-none font-medium"
+                                                placeholder="Enter report text here..." />
+                                        </div>
                                     </div>
                                 )}
                                 {editingElement.type !== 'text' && (

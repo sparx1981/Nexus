@@ -202,24 +202,29 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                       ? <span className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 border border-emerald-200 dark:border-emerald-900/30 rounded-full text-[9px] font-black uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live</span>
                       : <span className="flex items-center gap-1 px-2 py-0.5 bg-neutral-100 dark:bg-slate-800 text-neutral-400 rounded-full text-[9px] font-black uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />Draft</span>}
                   </div>
-                  {/* Action buttons — visible on hover */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Action buttons — star always visible if active, others on hover */}
+                  <div className="flex items-center gap-1">
                     <button onClick={e => handleToggleFavourite(e, app)} title={app.favourite ? 'Remove from favourites' : 'Add to favourites'}
-                      className={cn('p-1.5 rounded-lg transition-colors', app.favourite ? 'text-amber-400 hover:text-amber-500' : 'text-neutral-400 hover:text-amber-400')}>
+                      className={cn(
+                        'p-1.5 rounded-lg transition-all transition-opacity duration-200',
+                        app.favourite ? 'text-amber-400 opacity-100' : 'text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-amber-400'
+                      )}>
                       <Star className={cn('w-4 h-4', app.favourite && 'fill-amber-400')} />
                     </button>
-                    <button onClick={e => handleDuplicate(e, app)} title="Duplicate"
-                      className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
-                      <Copy className="w-4 h-4" />
-                    </button>
-                    <button onClick={e => handleEditClick(e, app)} title="Settings"
-                      className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
-                      <Settings className="w-4 h-4" />
-                    </button>
-                    <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ id: app.id, name: app.name }); }} title="Delete"
-                      className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={e => handleDuplicate(e, app)} title="Duplicate"
+                        className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
+                        <Copy className="w-4 h-4" />
+                      </button>
+                      <button onClick={e => handleEditClick(e, app)} title="Settings"
+                        className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
+                        <Settings className="w-4 h-4" />
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ id: app.id, name: app.name }); }} title="Delete"
+                        className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mb-1">
@@ -287,23 +292,28 @@ export function ApplicationsView({ onSelectApp }: { onSelectApp: (id: string) =>
                         : <span className="flex items-center gap-1.5 text-[10px] font-bold text-neutral-400"><span className="w-1.5 h-1.5 rounded-full bg-neutral-300" />Draft</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                      <div className="flex items-center gap-1 justify-end">
                         <button onClick={e => handleToggleFavourite(e, app)} title={app.favourite ? 'Remove from favourites' : 'Add to favourites'}
-                          className={cn('p-1.5 rounded-lg transition-colors', app.favourite ? 'text-amber-400 hover:text-amber-500' : 'text-neutral-400 hover:text-amber-400')}>
+                          className={cn(
+                            'p-1.5 rounded-lg transition-all transition-opacity duration-200',
+                            app.favourite ? 'text-amber-400 opacity-100' : 'text-neutral-400 opacity-0 group-hover:opacity-100 hover:text-amber-400'
+                          )}>
                           <Star className={cn('w-3.5 h-3.5', app.favourite && 'fill-amber-400')} />
                         </button>
-                        <button onClick={e => handleDuplicate(e, app)} title="Duplicate"
-                          className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={e => handleEditClick(e, app)} title="Settings"
-                          className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
-                          <Settings className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ id: app.id, name: app.name }); }} title="Delete"
-                          className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={e => handleDuplicate(e, app)} title="Duplicate"
+                            className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={e => handleEditClick(e, app)} title="Settings"
+                            className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/20 rounded-lg transition-colors">
+                            <Settings className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); setDeleteConfirm({ id: app.id, name: app.name }); }} title="Delete"
+                            className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>

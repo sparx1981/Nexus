@@ -26,7 +26,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
         const wsId = useAuthStore.getState().selectedProjectId;
         if (!wsId) return;
 
-        const withDefaults = { ...dashboard, published: dashboard.published ?? false };
+        const withDefaults = { ...dashboard };
         set((state) => ({ dashboards: [...state.dashboards, withDefaults] }));
         const ref = doc(db, 'workspaces', wsId, 'dashboards', dashboard.id);
         await setDoc(ref, withDefaults);

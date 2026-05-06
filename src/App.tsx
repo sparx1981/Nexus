@@ -115,7 +115,10 @@ function AppRouter() {
   const path = window.location.pathname;
   const legacyMatch = path.match(/^\/app\/([^/]+)$/);
   const slugMatch   = path.match(/^\/([^/]+)\/([^/]+)$/);
+  const dashboardMatch = path.match(/^\/([^/]+)\/dashboard\/([^/]+)$/);
+  
   if (legacyMatch) return <PublishedAppLookup appId={legacyMatch[1]} />;
+  if (dashboardMatch && !RESERVED.includes(dashboardMatch[1])) return <PublishedDashboardLookup workspaceSlug={dashboardMatch[1]} dashboardId={dashboardMatch[2]} />;
   if (slugMatch && !RESERVED.includes(slugMatch[1])) return <PublishedAppLookup workspaceSlug={slugMatch[1]} appId={slugMatch[2]} />;
   return <App />;
 }
@@ -941,13 +944,38 @@ function PublishedAppLookup({ appId, workspaceSlug }: { appId: string; workspace
       </div>
     </div>
   );
-  if (!wsId) return (
+  if (!wsId) return <div className="min-h-screen bg-neutral-50" />;
+  return <PublishedAppRunner appId={appId} workspaceId={wsId} />;
+}
+
+// Looks up which workspace a dashboard belongs to, then renders it
+function PublishedDashboardLookup({ dashboardId, workspaceSlug }: { dashboardId: string; workspaceSlug: string }) {
+  const [wsId, setWsId] = React.useState<string | null>(null);
+  const [notFound, setNotFound] = React.useState(false);
+
+  React.useEffect(() => {
+    import('./lib/firebase').then(({ db }) => {
+      import('firebase/firestore').then(({ collection, query, where, getDocs }) => {
+        const wsQuery = query(collection(db, 'workspaces'), where('slug', '==', workspaceSlug));
+        getDocs(wsQuery).then(wsSnap => {
+          if (wsSnap.empty) { setNotFound(true); return; }
+          setWsId(wsSnap.docs[0].id);
+        }).catch(() => setNotFound(true));
+      });
+    });
+  }, [dashboardId, workspaceSlug]);
+
+  if (notFound) return (
     <div className="min-h-screen flex items-center justify-center bg-neutral-50">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin"/>
-        <p className="text-sm text-neutral-400">Loading…</p>
+      <div className="text-center">
+        <p className="text-2xl font-bold text-neutral-900 mb-2">Dashboard not found</p>
+        <p className="text-neutral-500 text-sm">This dashboard may not exist or hasn't been published.</p>
       </div>
     </div>
   );
-  return <PublishedAppRunner appId={appId} workspaceId={wsId} />;
+  if (!wsId) return <div className="min-h-screen bg-neutral-50" />;
+  
+  return <PublishedDashboardRunner dashboardId={dashboardId} workspaceId={wsId} />;
 }
+
+import { PublishedDashboardRunner } from './components/Dashboards/PublishedDashboardRunner';

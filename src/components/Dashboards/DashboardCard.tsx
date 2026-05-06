@@ -19,13 +19,18 @@ import { cn } from '../../lib/utils';
 import { db } from '../../lib/firebase';
 import { collection, query, limit, getDocs } from 'firebase/firestore';
 import { useAuthStore } from '../../store/authStore';
+import { useSchemaStore } from '../../store/schemaStore';
 
 const COLORS = ['#1A56DB', '#059669', '#D97706', '#DC2626', '#7C3AED'];
 
-export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?: () => void, onDelete?: () => void }) => {
+export const DashboardCard = ({ card, onEdit, onDelete, isExpanded }: { card: ICard, onEdit?: () => void, onDelete?: () => void, isExpanded?: boolean }) => {
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { selectedProjectId } = useAuthStore();
+    const { tables } = useSchemaStore();
+
+    const [page, setPage] = useState(0);
+    const PAGE_SIZE = 10;
 
     useEffect(() => {
         const fetchData = async () => {
@@ -35,15 +40,24 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
             }
 
             try {
+                // Internal tables use 'tableData/{id}/rows'
                 const q = query(
-                    collection(db, 'workspaces', selectedProjectId, 'datasources', card.dataSourceId, 'records'),
-                    limit(50)
+                    collection(db, 'workspaces', selectedProjectId, 'tableData', card.dataSourceId, 'rows'),
+                    limit(200)
                 );
                 const snap = await getDocs(q);
-                const records = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                let records = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 
-                // Simple transformation logic: count by fieldX if needed, or just use raw for now
-                // REAL implementation would likely aggregate based on card.config.operation
+                // If no records found in tableData, check if it's in datasources (legacy or specifically configured)
+                if (records.length === 0) {
+                    const altQ = query(
+                        collection(db, 'workspaces', selectedProjectId, 'datasources', card.dataSourceId, 'records'),
+                        limit(200)
+                    );
+                    const altSnap = await getDocs(altQ);
+                    records = altSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                }
+                
                 setData(records);
             } catch (e) {
                 console.error('Error fetching dashboard card data:', e);
@@ -53,7 +67,8 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
         };
 
         fetchData();
-    }, [selectedProjectId, card.dataSourceId]);
+        setPage(0); // Reset page when config change or data source changes
+    }, [selectedProjectId, card.dataSourceId, JSON.stringify(card.config)]);
 
     const renderChart = () => {
         if (loading) return (
@@ -70,22 +85,79 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
         );
 
         switch (card.type) {
-            case 'kpi':
-                const kpiValue = card.config.kpiField ? (data[0]?.[card.config.kpiField] || '0') : data.length;
+            case 'kpi': {
+                const op = card.config.kpiOperation || 'count';
+                const field = card.config.kpiField;
+                let kpiValue: any = '-';
+
+                if (op === 'count') {
+                    kpiValue = data.length;
+                } else if (field) {
+                    const values = data.map(d => d[field]).filter(v => v !== undefined && v !== null);
+                    if (values.length > 0) {
+                        switch (op) {
+                            case 'sum':
+                                kpiValue = values.reduce((a, b) => Number(a) + Number(b), 0);
+                                break;
+                            case 'avg':
+                                kpiValue = (values.reduce((a, b) => Number(a) + Number(b), 0) / values.length).toFixed(1);
+                                break;
+                            case 'max':
+                                kpiValue = Math.max(...values.map(v => Number(v)));
+                                break;
+                            case 'min':
+                                kpiValue = Math.min(...values.map(v => Number(v)));
+                                break;
+                            case 'days_since': {
+                                const lastDate = new Date(values.sort().reverse()[0]);
+                                if (!isNaN(lastDate.getTime())) {
+                                    const diff = Math.floor((new Date().getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+                                    kpiValue = diff;
+                                }
+                                break;
+                            }
+                            case 'days_between': {
+                                const fieldB = card.config.fieldB;
+                                if (fieldB) {
+                                    const differences = data.map(d => {
+                                        const start = new Date(d[field]);
+                                        const end = new Date(d[fieldB]);
+                                        if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+                                        return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                                    }).filter(v => v !== null) as number[];
+
+                                    if (differences.length > 0) {
+                                        kpiValue = (differences.reduce((a, b) => a + b, 0) / differences.length).toFixed(0);
+                                    }
+                                } else {
+                                    // Fallback to range of one field if fieldB not set
+                                    const sorted = values.map(v => new Date(v).getTime()).filter(t => !isNaN(t)).sort();
+                                    if (sorted.length >= 2) {
+                                        const diff = Math.floor((sorted[sorted.length - 1] - sorted[0]) / (1000 * 60 * 60 * 24));
+                                        kpiValue = diff;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 return (
-                    <div className="h-full flex flex-col justify-center">
-                        <h4 className="text-3xl font-black text-neutral-900 tracking-tight tabular-nums">{kpiValue}</h4>
-                        <div className="flex items-center gap-1.5 mt-2 text-[10px] font-bold text-emerald-600 bg-emerald-50 w-fit px-2 py-0.5 rounded-full">
+                    <div className={cn("h-full flex flex-col justify-center transition-all duration-300", isExpanded ? "items-center" : "")}>
+                        <h4 className={cn("font-black text-neutral-900 dark:text-white tracking-tight tabular-nums transition-all", isExpanded ? "text-8xl" : "text-3xl")}>{kpiValue}</h4>
+                        <div className={cn("flex items-center gap-1.5 mt-2 font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30 w-fit px-2 py-0.5 rounded-full", isExpanded ? "text-base px-4 py-1.5 mt-8" : "text-[10px]")}>
                             <TrendingUp className="w-3 h-3" />
-                            Live Data
+                            {op.toUpperCase()} {field && `(${field})`}
                         </div>
                     </div>
                 );
+            }
 
             case 'bar':
                 return (
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={data.slice(0, 10)}>
+                        <BarChart data={data.slice(0, 50)}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                             <XAxis 
                                 dataKey={card.config.fieldX || 'id'} 
@@ -103,7 +175,7 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
             case 'line':
                 return (
                     <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={data.slice(0, 15)}>
+                        <LineChart data={data.slice(0, 50)}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F3F4F6" />
                             <XAxis 
                                 dataKey={card.config.fieldX || 'id'} 
@@ -132,9 +204,9 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
-                                data={pieData.slice(0, 5)}
-                                innerRadius={40}
-                                outerRadius={60}
+                                data={pieData.slice(0, 10)}
+                                innerRadius="40%"
+                                outerRadius="80%"
                                 paddingAngle={5}
                                 dataKey="value"
                             >
@@ -147,30 +219,71 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
                     </ResponsiveContainer>
                 );
 
-            case 'table':
-                const fields = card.config.tableFields || (data[0] ? Object.keys(data[0]).filter(k => !k.startsWith('_')).slice(0, 4) : []);
+            case 'table': {
+                const table = tables.find(t => t.id === card.dataSourceId);
+                const fields = card.config.tableFields?.length 
+                    ? card.config.tableFields 
+                    : (data[0] ? Object.keys(data[0]).filter(k => !k.startsWith('_')).slice(0, 4) : []);
+                
+                const paginatedData = data.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+                const totalPages = Math.ceil(data.length / PAGE_SIZE);
+                const headerBg = card.config.headerBg || '#1A56DB';
+
                 return (
-                    <div className="h-full overflow-auto text-[11px]">
-                         <table className="w-full text-left">
-                            <thead className="sticky top-0 bg-white border-b border-neutral-100">
-                                <tr>
-                                    {fields.map(f => (
-                                        <th key={f} className="py-2 font-black text-neutral-400 uppercase tracking-widest">{f}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-neutral-50">
-                                {data.slice(0, 10).map((row, i) => (
-                                    <tr key={i}>
-                                        {fields.map(f => (
-                                            <td key={f} className="py-2 text-neutral-600 font-medium">{row[f]?.toString() || '-'}</td>
-                                        ))}
+                    <div className="h-full flex flex-col min-h-0">
+                        <div className="flex-1 overflow-auto text-[11px] scrollbar-thin scrollbar-thumb-neutral-200 dark:scrollbar-thumb-neutral-800">
+                             <table className="w-full text-left">
+                                <thead className="sticky top-0 border-b border-neutral-100 dark:border-neutral-800 z-10 transition-colors" style={{ backgroundColor: headerBg }}>
+                                    <tr>
+                                        {fields.map(f => {
+                                            const fieldDef = table?.fields.find(fd => fd.name === f);
+                                            const header = fieldDef?.description || f;
+                                            return (
+                                                <th key={f} className="py-2.5 font-black uppercase tracking-widest px-2 whitespace-nowrap text-white opacity-90">{header}</th>
+                                            );
+                                        })}
                                     </tr>
-                                ))}
-                            </tbody>
-                         </table>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-50 dark:divide-neutral-900">
+                                    {paginatedData.map((row, i) => (
+                                        <tr key={i} className="hover:bg-neutral-50/50 dark:hover:bg-white/5 transition-colors">
+                                            {fields.map(f => (
+                                                <td key={f} className="py-2.5 text-neutral-600 dark:text-neutral-300 font-medium px-2 truncate max-w-[150px]" title={row[f]?.toString()}>
+                                                    {row[f]?.toString() || '-'}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                             </table>
+                        </div>
+                        
+                        {totalPages > 1 && (
+                            <div className="flex items-center justify-between mt-4 pb-2 border-t border-neutral-50 dark:border-neutral-900 pt-4 px-2">
+                                <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-tighter">
+                                    Page {page + 1} of {totalPages} ({data.length} records)
+                                </p>
+                                <div className="flex gap-2">
+                                    <button 
+                                        disabled={page === 0}
+                                        onClick={() => setPage(p => Math.max(0, p - 1))}
+                                        className="p-1 px-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg text-[9px] font-black uppercase tracking-widest disabled:opacity-30 hover:text-primary-600 transition-colors"
+                                    >
+                                        Prev
+                                    </button>
+                                    <button 
+                                        disabled={page >= totalPages - 1}
+                                        onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                                        className="p-1 px-3 bg-neutral-50 dark:bg-neutral-900 rounded-lg text-[9px] font-black uppercase tracking-widest disabled:opacity-30 hover:text-primary-600 transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
+            }
 
             default:
                 return null;
@@ -178,46 +291,8 @@ export const DashboardCard = ({ card, onEdit, onDelete }: { card: ICard, onEdit?
     };
 
     return (
-        <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all group flex flex-col min-h-[280px]">
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-neutral-50 text-neutral-400 group-hover:text-primary-600 group-hover:bg-primary-50 transition-all rounded-lg">
-                        {card.type === 'kpi' && <Target className="w-4 h-4" />}
-                        {card.type === 'bar' && <BarChart className="w-4 h-4" />}
-                        {card.type === 'line' && <TrendingUp className="w-4 h-4" />}
-                        {card.type === 'pie' && <PieChartIcon className="w-4 h-4" />}
-                        {card.type === 'table' && <TableIcon className="w-4 h-4" />}
-                    </div>
-                    <div>
-                        <h5 className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest leading-none mb-1">Insight View</h5>
-                        <h3 className="text-sm font-black text-neutral-900 leading-tight">{card.title}</h3>
-                    </div>
-                </div>
-                
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {onEdit && (
-                        <button onClick={onEdit} className="p-1.5 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 rounded-md">
-                            <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                    )}
-                    {onDelete && (
-                        <button onClick={onDelete} className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-md">
-                            <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            <div className="flex-1">
-                {renderChart()}
-            </div>
-            
-            <div className="mt-4 pt-4 border-t border-neutral-50 flex items-center justify-between">
-                <div className="flex items-center gap-1 text-[9px] font-bold text-neutral-400 uppercase tracking-tight">
-                    <Database className="w-3 h-3" />
-                    Source: {card.dataSourceId || 'None'}
-                </div>
-            </div>
+        <div className="w-full h-full min-h-0">
+            {renderChart()}
         </div>
     );
 };
